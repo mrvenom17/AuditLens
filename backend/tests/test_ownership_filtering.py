@@ -113,9 +113,7 @@ class TestAuditorIsolation:
         other = make_user(Role.auditor)
         make_engagement(other, status=EngagementStatus.in_progress)
 
-        items, total = repo.list_scoped(
-            actor_for(auditor), status=EngagementStatus.in_progress
-        )
+        items, total = repo.list_scoped(actor_for(auditor), status=EngagementStatus.in_progress)
 
         assert items == []
         assert total == 0
@@ -159,21 +157,27 @@ class TestAuditorIsolation:
 
 class TestReviewerAndAdminVisibility:
     def test_reviewer_sees_every_engagement(
-        self, repo: EngagementRepository, make_user: Any, two_auditors_two_engagements: dict[str, Any]
+        self,
+        repo: EngagementRepository,
+        make_user: Any,
+        two_auditors_two_engagements: dict[str, Any],
     ) -> None:
         """03_DATA_MODEL.md §8.2: Reviewers see all engagements at the firm,
         without needing an assignment row."""
         setup = two_auditors_two_engagements
         reviewer = make_user(Role.reviewer)
 
-        items, total = repo.list_scoped(actor_for(reviewer))
+        _, total = repo.list_scoped(actor_for(reviewer))
 
         assert total == 2
         assert repo.get_scoped(setup["engagement_a"].id, actor_for(reviewer)) is not None
         assert repo.get_scoped(setup["engagement_b"].id, actor_for(reviewer)) is not None
 
     def test_admin_sees_every_engagement(
-        self, repo: EngagementRepository, make_user: Any, two_auditors_two_engagements: dict[str, Any]
+        self,
+        repo: EngagementRepository,
+        make_user: Any,
+        two_auditors_two_engagements: dict[str, Any],
     ) -> None:
         admin = make_user(Role.admin)
         _, total = repo.list_scoped(actor_for(admin))
@@ -182,7 +186,7 @@ class TestReviewerAndAdminVisibility:
     def test_reviewer_still_cannot_reach_a_nonexistent_engagement(
         self, repo: EngagementRepository, make_user: Any
     ) -> None:
-        """"Sees everything" must mean "everything that exists", not "returns
+        """ "Sees everything" must mean "everything that exists", not "returns
         something for any id"."""
         reviewer = make_user(Role.reviewer)
         assert repo.get_scoped(uuid.uuid4(), actor_for(reviewer)) is None
@@ -234,7 +238,10 @@ class TestRequireAccess:
         )  # must not raise
 
     def test_passes_for_a_reviewer_on_any_engagement(
-        self, repo: EngagementRepository, make_user: Any, two_auditors_two_engagements: dict[str, Any]
+        self,
+        repo: EngagementRepository,
+        make_user: Any,
+        two_auditors_two_engagements: dict[str, Any],
     ) -> None:
         setup = two_auditors_two_engagements
         reviewer = make_user(Role.reviewer)
@@ -250,9 +257,7 @@ class TestFilteringHappensInSql:
     defect, so the mechanism is pinned directly.
     """
 
-    def test_scope_to_actor_adds_a_where_clause_for_an_auditor(
-        self, make_user: Any
-    ) -> None:
+    def test_scope_to_actor_adds_a_where_clause_for_an_auditor(self, make_user: Any) -> None:
         auditor = make_user(Role.auditor)
         base = select(Engagement)
 
@@ -262,9 +267,7 @@ class TestFilteringHappensInSql:
         assert "engagement_assignments" in sql
         assert "WHERE" in sql
 
-    def test_scope_to_actor_leaves_a_reviewer_query_unrestricted(
-        self, make_user: Any
-    ) -> None:
+    def test_scope_to_actor_leaves_a_reviewer_query_unrestricted(self, make_user: Any) -> None:
         reviewer = make_user(Role.reviewer)
         base = select(Engagement)
 
@@ -292,15 +295,11 @@ class TestFilteringHappensInSql:
         setup = two_auditors_two_engagements
 
         assert (
-            has_engagement_access(
-                db, setup["engagement_a"].id, actor_for(setup["auditor_a"])
-            )
+            has_engagement_access(db, setup["engagement_a"].id, actor_for(setup["auditor_a"]))
             is True
         )
         assert (
-            has_engagement_access(
-                db, setup["engagement_b"].id, actor_for(setup["auditor_a"])
-            )
+            has_engagement_access(db, setup["engagement_b"].id, actor_for(setup["auditor_a"]))
             is False
         )
 

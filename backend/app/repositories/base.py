@@ -22,7 +22,7 @@ predicate the database evaluates.
 from __future__ import annotations
 
 import uuid
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import Select, exists, select
 from sqlalchemy.orm import Session as DBSession
@@ -33,8 +33,6 @@ from app.models.engagement import Engagement, EngagementAssignment
 
 if TYPE_CHECKING:
     from app.api.deps import Actor
-
-_S = TypeVar("_S", bound=Select[Any])
 
 
 def visible_engagement_ids(actor: Actor) -> Select[tuple[uuid.UUID]]:
@@ -53,7 +51,7 @@ def visible_engagement_ids(actor: Actor) -> Select[tuple[uuid.UUID]]:
     )
 
 
-def scope_to_actor(stmt: _S, engagement_id_column: Any, actor: Actor) -> _S:
+def scope_to_actor[S: Select[Any]](stmt: S, engagement_id_column: Any, actor: Actor) -> S:
     """Restrict a statement to engagements the actor may access.
 
     `engagement_id_column` is passed explicitly rather than inferred so that
@@ -63,7 +61,7 @@ def scope_to_actor(stmt: _S, engagement_id_column: Any, actor: Actor) -> _S:
     """
     if actor.sees_all_engagements:
         return stmt
-    return stmt.where(engagement_id_column.in_(visible_engagement_ids(actor)))  # type: ignore[return-value]
+    return stmt.where(engagement_id_column.in_(visible_engagement_ids(actor)))
 
 
 class EngagementScopedRepository:
@@ -76,7 +74,7 @@ class EngagementScopedRepository:
     def __init__(self, db: DBSession) -> None:
         self._db = db
 
-    def _scoped(self, stmt: _S, engagement_id_column: Any, actor: Actor) -> _S:
+    def _scoped[S: Select[Any]](self, stmt: S, engagement_id_column: Any, actor: Actor) -> S:
         return scope_to_actor(stmt, engagement_id_column, actor)
 
     def _require_access(self, engagement_id: uuid.UUID, actor: Actor, *, action: str) -> None:
@@ -102,9 +100,7 @@ class EngagementScopedRepository:
                 )
             return
 
-        engagement_exists = self._db.scalar(
-            select(exists().where(Engagement.id == engagement_id))
-        )
+        engagement_exists = self._db.scalar(select(exists().where(Engagement.id == engagement_id)))
         if not engagement_exists:
             raise NotFoundError("Engagement not found.")
 

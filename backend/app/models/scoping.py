@@ -6,9 +6,10 @@ import uuid
 
 from sqlalchemy import Boolean, Enum, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, uuid_pk
+from app.models.corpus import PCIRequirement
 from app.models.enums import EvidenceRequestStatus, ScopeSource
 
 
@@ -50,6 +51,11 @@ class ScopedRequirement(Base, TimestampMixin):
     # approved Finding (01_REQUIREMENTS.md § Engagement Finalization).
     gap_acknowledged: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     gap_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Eager-loaded: every response that includes a scoped requirement also needs
+    # its clause id and title, so a lazy load here would be an N+1 on the list
+    # endpoint without exception.
+    requirement: Mapped[PCIRequirement] = relationship(lazy="joined")
 
 
 class EvidenceRequest(Base, TimestampMixin):

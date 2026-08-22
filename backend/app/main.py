@@ -133,7 +133,10 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
     )
 
 
-from app.api.routes import auth, health  # noqa: E402  (registered after handlers exist)
+# Registered after the exception handlers so every route inherits the envelope.
+from app.api.routes import auth, engagements, health, scoping  # noqa: E402
 
 app.include_router(health.router)
 app.include_router(auth.router)
+app.include_router(engagements.router)
+app.include_router(scoping.router)
