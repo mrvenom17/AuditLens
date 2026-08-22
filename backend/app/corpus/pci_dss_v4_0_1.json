@@ -1,0 +1,1251 @@
+{
+ "corpus_version": "v4.0.1-summary",
+ "effective_date": "2024-06-11",
+ "source_note": "Clause identifiers, requirement families and titles reflect the published structure of PCI DSS v4.0.1. The `full_text` values are firm-authored summaries, NOT the PCI Security Standards Council's copyrighted text. See ADR-010: replace this file with a licensed full-text export and re-run the loader under a new corpus_version before processing real client evidence.",
+ "families": {
+  "1": "Install and Maintain Network Security Controls",
+  "2": "Apply Secure Configurations to All System Components",
+  "3": "Protect Stored Account Data",
+  "4": "Protect Cardholder Data with Strong Cryptography During Transmission Over Open, Public Networks",
+  "5": "Protect All Systems and Networks from Malicious Software",
+  "6": "Develop and Maintain Secure Systems and Software",
+  "7": "Restrict Access to System Components and Cardholder Data by Business Need to Know",
+  "8": "Identify Users and Authenticate Access to System Components",
+  "9": "Restrict Physical Access to Cardholder Data",
+  "10": "Log and Monitor All Access to System Components and Cardholder Data",
+  "11": "Test Security of Systems and Networks Regularly",
+  "12": "Support Information Security with Organizational Policies and Programs"
+ },
+ "requirements": [
+  {
+   "clause_id": "1.1.1",
+   "requirement_family": 1,
+   "title": "Processes and mechanisms for installing and maintaining network security controls are defined and understood",
+   "full_text": "All security policies and operational procedures for Requirement 1 are documented, kept current, in use, and known to all affected parties."
+  },
+  {
+   "clause_id": "1.1.2",
+   "requirement_family": 1,
+   "title": "Roles and responsibilities for Requirement 1 activities are documented and assigned",
+   "full_text": "Roles and responsibilities for performing network security control activities are documented, assigned, and understood by the assigned personnel."
+  },
+  {
+   "clause_id": "1.2.1",
+   "requirement_family": 1,
+   "title": "Configuration standards for network security control rulesets are defined, implemented, and maintained",
+   "full_text": "Standards governing NSC rulesets are defined and applied, covering how rules are created, reviewed, and approved before deployment."
+  },
+  {
+   "clause_id": "1.2.2",
+   "requirement_family": 1,
+   "title": "All changes to network connections and to configurations of NSCs are approved and managed",
+   "full_text": "Changes to network connections and NSC configurations go through the change control process before being applied."
+  },
+  {
+   "clause_id": "1.2.3",
+   "requirement_family": 1,
+   "title": "An accurate network diagram is maintained",
+   "full_text": "A current diagram shows all connections between the cardholder data environment and other networks, including wireless."
+  },
+  {
+   "clause_id": "1.2.4",
+   "requirement_family": 1,
+   "title": "An accurate data-flow diagram is maintained",
+   "full_text": "A current diagram documents all account data flows across systems and networks."
+  },
+  {
+   "clause_id": "1.2.5",
+   "requirement_family": 1,
+   "title": "All services, protocols, and ports allowed are identified, approved, and have a defined business need",
+   "full_text": "Every permitted service, protocol, and port is inventoried with a documented business justification."
+  },
+  {
+   "clause_id": "1.2.6",
+   "requirement_family": 1,
+   "title": "Security features are defined and implemented for all services, protocols, and ports in use that are considered insecure",
+   "full_text": "Insecure services in use have compensating security features defined and applied."
+  },
+  {
+   "clause_id": "1.2.7",
+   "requirement_family": 1,
+   "title": "Configurations of NSCs are reviewed at least once every six months",
+   "full_text": "NSC configurations are reviewed on a defined schedule to confirm they remain relevant and effective."
+  },
+  {
+   "clause_id": "1.2.8",
+   "requirement_family": 1,
+   "title": "Configuration files for NSCs are secured from unauthorized access and kept consistent with active network configurations",
+   "full_text": "NSC configuration files are protected and synchronized with the running configuration."
+  },
+  {
+   "clause_id": "1.3.1",
+   "requirement_family": 1,
+   "title": "Inbound traffic to the CDE is restricted to only that which is necessary",
+   "full_text": "Inbound traffic to the cardholder data environment is limited to necessary traffic; all other traffic is denied."
+  },
+  {
+   "clause_id": "1.3.2",
+   "requirement_family": 1,
+   "title": "Outbound traffic from the CDE is restricted to only that which is necessary",
+   "full_text": "Outbound traffic from the cardholder data environment is limited to necessary traffic; all other traffic is denied."
+  },
+  {
+   "clause_id": "1.3.3",
+   "requirement_family": 1,
+   "title": "NSCs are installed between all wireless networks and the CDE",
+   "full_text": "Network security controls sit between wireless networks and the CDE, denying or explicitly authorizing traffic."
+  },
+  {
+   "clause_id": "1.4.1",
+   "requirement_family": 1,
+   "title": "NSCs are implemented between trusted and untrusted networks",
+   "full_text": "Network security controls are deployed at every boundary between trusted and untrusted networks."
+  },
+  {
+   "clause_id": "1.4.2",
+   "requirement_family": 1,
+   "title": "Inbound traffic from untrusted networks to trusted networks is restricted",
+   "full_text": "Inbound traffic from untrusted networks is limited to authorized communications only."
+  },
+  {
+   "clause_id": "1.4.3",
+   "requirement_family": 1,
+   "title": "Anti-spoofing measures are implemented to detect and block forged source IP addresses",
+   "full_text": "Anti-spoofing controls prevent forged source IP addresses from entering the trusted network."
+  },
+  {
+   "clause_id": "1.4.4",
+   "requirement_family": 1,
+   "title": "System components that store cardholder data are not directly accessible from untrusted networks",
+   "full_text": "Stored cardholder data is not reachable directly from untrusted networks."
+  },
+  {
+   "clause_id": "1.4.5",
+   "requirement_family": 1,
+   "title": "The disclosure of internal IP addresses and routing information is limited to only authorized parties",
+   "full_text": "Internal addressing and routing information is not exposed to unauthorized parties."
+  },
+  {
+   "clause_id": "1.5.1",
+   "requirement_family": 1,
+   "title": "Security controls are implemented on any computing devices that connect to both untrusted networks and the CDE",
+   "full_text": "Devices that can reach both untrusted networks and the CDE carry defined security controls and cannot be altered by the user."
+  },
+  {
+   "clause_id": "2.1.1",
+   "requirement_family": 2,
+   "title": "Processes and mechanisms for applying secure configurations are defined and understood",
+   "full_text": "Security policies and operational procedures for Requirement 2 are documented, current, in use, and known to affected parties."
+  },
+  {
+   "clause_id": "2.1.2",
+   "requirement_family": 2,
+   "title": "Roles and responsibilities for Requirement 2 activities are documented and assigned",
+   "full_text": "Roles for secure-configuration activities are documented, assigned, and understood."
+  },
+  {
+   "clause_id": "2.2.1",
+   "requirement_family": 2,
+   "title": "Configuration standards are developed, implemented, and maintained",
+   "full_text": "Configuration standards cover all system components, address known vulnerabilities, and are consistent with industry-accepted hardening benchmarks."
+  },
+  {
+   "clause_id": "2.2.2",
+   "requirement_family": 2,
+   "title": "Vendor default accounts are managed",
+   "full_text": "Vendor default accounts are removed or disabled; where retained, the default password is changed and use is justified."
+  },
+  {
+   "clause_id": "2.2.3",
+   "requirement_family": 2,
+   "title": "Primary functions requiring different security levels are managed",
+   "full_text": "Functions with differing security levels do not coexist on one component, or are isolated so they cannot affect each other."
+  },
+  {
+   "clause_id": "2.2.4",
+   "requirement_family": 2,
+   "title": "Only necessary services, protocols, daemons, and functions are enabled",
+   "full_text": "Unnecessary services and functions are removed, disabled, or otherwise prevented from running."
+  },
+  {
+   "clause_id": "2.2.5",
+   "requirement_family": 2,
+   "title": "Where insecure services, protocols, or daemons are present, business justification and additional security features are documented",
+   "full_text": "Any insecure service still in use is justified and has documented mitigating controls."
+  },
+  {
+   "clause_id": "2.2.6",
+   "requirement_family": 2,
+   "title": "System security parameters are configured to prevent misuse",
+   "full_text": "Security parameters are set to prevent misuse across all system components."
+  },
+  {
+   "clause_id": "2.2.7",
+   "requirement_family": 2,
+   "title": "All non-console administrative access is encrypted using strong cryptography",
+   "full_text": "Administrative access that does not use the physical console is encrypted in transit."
+  },
+  {
+   "clause_id": "2.3.1",
+   "requirement_family": 2,
+   "title": "For wireless environments connected to the CDE, all wireless vendor defaults are changed at installation or confirmed secure",
+   "full_text": "Wireless defaults including keys, passphrases, and SNMP strings are changed or verified secure."
+  },
+  {
+   "clause_id": "2.3.2",
+   "requirement_family": 2,
+   "title": "Wireless encryption keys are changed when personnel with knowledge of the key leave or the key is suspected of compromise",
+   "full_text": "Wireless keys are rotated on personnel change or suspected compromise."
+  },
+  {
+   "clause_id": "3.1.1",
+   "requirement_family": 3,
+   "title": "Processes and mechanisms for protecting stored account data are defined and understood",
+   "full_text": "Security policies and operational procedures for Requirement 3 are documented, current, in use, and known to affected parties."
+  },
+  {
+   "clause_id": "3.1.2",
+   "requirement_family": 3,
+   "title": "Roles and responsibilities for Requirement 3 activities are documented and assigned",
+   "full_text": "Roles for protecting stored account data are documented, assigned, and understood."
+  },
+  {
+   "clause_id": "3.2.1",
+   "requirement_family": 3,
+   "title": "Account data storage is kept to a minimum",
+   "full_text": "Data retention and disposal policies limit stored account data to what is legally or operationally required, with defined retention periods and secure deletion."
+  },
+  {
+   "clause_id": "3.3.1",
+   "requirement_family": 3,
+   "title": "Sensitive authentication data is not retained after authorization",
+   "full_text": "Full track data, card verification codes, and PINs are not stored after authorization completes, even if encrypted."
+  },
+  {
+   "clause_id": "3.3.2",
+   "requirement_family": 3,
+   "title": "Sensitive authentication data stored electronically prior to authorization is encrypted",
+   "full_text": "Any SAD stored before authorization is encrypted using strong cryptography."
+  },
+  {
+   "clause_id": "3.3.3",
+   "requirement_family": 3,
+   "title": "Additional requirements for issuers: any storage of sensitive authentication data is justified and secured",
+   "full_text": "Issuers storing SAD have a documented business justification and secure the data with strong cryptography."
+  },
+  {
+   "clause_id": "3.4.1",
+   "requirement_family": 3,
+   "title": "PAN is masked when displayed such that only personnel with a legitimate business need can see more than the BIN and last four digits",
+   "full_text": "Displayed PANs are masked by default; fuller display requires a documented business need."
+  },
+  {
+   "clause_id": "3.4.2",
+   "requirement_family": 3,
+   "title": "When using remote-access technologies, copying and relocation of PAN is prevented for personnel without documented authorization",
+   "full_text": "Technical controls stop unauthorized copying of PAN during remote access sessions."
+  },
+  {
+   "clause_id": "3.5.1",
+   "requirement_family": 3,
+   "title": "PAN is rendered unreadable anywhere it is stored",
+   "full_text": "Stored PAN is protected by one-way hashing, truncation, tokenization, or strong cryptography."
+  },
+  {
+   "clause_id": "3.6.1",
+   "requirement_family": 3,
+   "title": "Procedures are defined and implemented to protect cryptographic keys used to protect stored account data",
+   "full_text": "Key management procedures cover generation, distribution, storage, and access restriction for keys protecting stored account data."
+  },
+  {
+   "clause_id": "3.7.1",
+   "requirement_family": 3,
+   "title": "Key-management policies and procedures are implemented to include generation of strong cryptographic keys",
+   "full_text": "Strong keys are generated according to documented key-management procedures."
+  },
+  {
+   "clause_id": "3.7.2",
+   "requirement_family": 3,
+   "title": "Key-management procedures include secure distribution of cryptographic keys",
+   "full_text": "Keys are distributed securely per documented procedures."
+  },
+  {
+   "clause_id": "3.7.3",
+   "requirement_family": 3,
+   "title": "Key-management procedures include secure storage of cryptographic keys",
+   "full_text": "Keys are stored securely in the fewest possible locations."
+  },
+  {
+   "clause_id": "3.7.4",
+   "requirement_family": 3,
+   "title": "Key-management procedures include cryptographic key changes at the end of the defined cryptoperiod",
+   "full_text": "Keys are retired and replaced at the end of their defined cryptoperiod."
+  },
+  {
+   "clause_id": "3.7.5",
+   "requirement_family": 3,
+   "title": "Key-management procedures include retirement or replacement of keys as deemed necessary",
+   "full_text": "Keys are retired or replaced when integrity is weakened or compromise is suspected."
+  },
+  {
+   "clause_id": "3.7.6",
+   "requirement_family": 3,
+   "title": "Where manual cleartext key-management operations are used, they are managed using split knowledge and dual control",
+   "full_text": "Manual cleartext key operations require at least two people, each holding only part of the key."
+  },
+  {
+   "clause_id": "3.7.7",
+   "requirement_family": 3,
+   "title": "Key-management procedures include prevention of unauthorized substitution of cryptographic keys",
+   "full_text": "Controls prevent an attacker from substituting a key of their choosing."
+  },
+  {
+   "clause_id": "3.7.8",
+   "requirement_family": 3,
+   "title": "Key custodians formally acknowledge that they understand and accept their responsibilities",
+   "full_text": "Key custodians sign a formal acknowledgement of their key-custodian duties."
+  },
+  {
+   "clause_id": "3.7.9",
+   "requirement_family": 3,
+   "title": "Additional requirements for service providers: keys shared with customers are documented and managed",
+   "full_text": "Service providers document and manage keys shared with customers for transmission or storage of account data."
+  },
+  {
+   "clause_id": "4.1.1",
+   "requirement_family": 4,
+   "title": "Processes and mechanisms for protecting cardholder data with strong cryptography during transmission are defined and understood",
+   "full_text": "Security policies and operational procedures for Requirement 4 are documented, current, in use, and known to affected parties."
+  },
+  {
+   "clause_id": "4.1.2",
+   "requirement_family": 4,
+   "title": "Roles and responsibilities for Requirement 4 activities are documented and assigned",
+   "full_text": "Roles for protecting data in transit are documented, assigned, and understood."
+  },
+  {
+   "clause_id": "4.2.1",
+   "requirement_family": 4,
+   "title": "Strong cryptography and security protocols are implemented to safeguard PAN during transmission over open, public networks",
+   "full_text": "Only trusted keys and certificates are accepted, the protocol supports only secure versions, and the encryption strength is appropriate."
+  },
+  {
+   "clause_id": "4.2.2",
+   "requirement_family": 4,
+   "title": "PAN is secured with strong cryptography whenever it is sent via end-user messaging technologies",
+   "full_text": "PAN sent by email, chat, SMS, or similar channels is rendered unreadable or protected with strong cryptography."
+  },
+  {
+   "clause_id": "5.1.1",
+   "requirement_family": 5,
+   "title": "Processes and mechanisms for protecting systems from malicious software are defined and understood",
+   "full_text": "Security policies and operational procedures for Requirement 5 are documented, current, in use, and known to affected parties."
+  },
+  {
+   "clause_id": "5.1.2",
+   "requirement_family": 5,
+   "title": "Roles and responsibilities for Requirement 5 activities are documented and assigned",
+   "full_text": "Roles for anti-malware activities are documented, assigned, and understood."
+  },
+  {
+   "clause_id": "5.2.1",
+   "requirement_family": 5,
+   "title": "An anti-malware solution is deployed on all system components, except those determined not to be at risk",
+   "full_text": "Anti-malware is deployed wherever malware is a risk, with exclusions justified by periodic evaluation."
+  },
+  {
+   "clause_id": "5.2.2",
+   "requirement_family": 5,
+   "title": "The deployed anti-malware solution detects all known types of malware and removes, blocks, or contains them",
+   "full_text": "The anti-malware solution addresses all known malware types."
+  },
+  {
+   "clause_id": "5.2.3",
+   "requirement_family": 5,
+   "title": "Any system components not protected by anti-malware are evaluated periodically",
+   "full_text": "Components excluded from anti-malware coverage are re-evaluated on a defined frequency."
+  },
+  {
+   "clause_id": "5.3.1",
+   "requirement_family": 5,
+   "title": "The anti-malware solution is kept current via automatic updates",
+   "full_text": "Anti-malware definitions and engines update automatically."
+  },
+  {
+   "clause_id": "5.3.2",
+   "requirement_family": 5,
+   "title": "The anti-malware solution performs periodic scans and active or real-time scans",
+   "full_text": "Scanning runs continuously, behaviourally, or on a defined periodic schedule."
+  },
+  {
+   "clause_id": "5.3.3",
+   "requirement_family": 5,
+   "title": "For removable electronic media, the anti-malware solution scans when media is inserted or performs continuous behavioural analysis",
+   "full_text": "Removable media is scanned on insertion or covered by continuous behavioural analysis."
+  },
+  {
+   "clause_id": "5.3.4",
+   "requirement_family": 5,
+   "title": "Audit logs for the anti-malware solution are enabled and retained",
+   "full_text": "Anti-malware logs are enabled and retained per the log retention requirement."
+  },
+  {
+   "clause_id": "5.3.5",
+   "requirement_family": 5,
+   "title": "Anti-malware mechanisms cannot be disabled or altered by users unless specifically documented and authorized",
+   "full_text": "Users cannot disable anti-malware; exceptions are time-limited and management-authorized."
+  },
+  {
+   "clause_id": "5.4.1",
+   "requirement_family": 5,
+   "title": "Processes and automated mechanisms are in place to detect and protect personnel against phishing attacks",
+   "full_text": "Anti-phishing controls detect and protect personnel from phishing attempts."
+  },
+  {
+   "clause_id": "6.1.1",
+   "requirement_family": 6,
+   "title": "Processes and mechanisms for developing and maintaining secure systems and software are defined and understood",
+   "full_text": "Security policies and operational procedures for Requirement 6 are documented, current, in use, and known to affected parties."
+  },
+  {
+   "clause_id": "6.1.2",
+   "requirement_family": 6,
+   "title": "Roles and responsibilities for Requirement 6 activities are documented and assigned",
+   "full_text": "Roles for secure development and maintenance are documented, assigned, and understood."
+  },
+  {
+   "clause_id": "6.2.1",
+   "requirement_family": 6,
+   "title": "Bespoke and custom software is developed securely",
+   "full_text": "Software is developed based on industry standards and secure design, with information security considered at every stage of the SDLC."
+  },
+  {
+   "clause_id": "6.2.2",
+   "requirement_family": 6,
+   "title": "Software development personnel are trained at least annually in secure software design and secure coding",
+   "full_text": "Developers receive annual training relevant to their role and the languages they use."
+  },
+  {
+   "clause_id": "6.2.3",
+   "requirement_family": 6,
+   "title": "Bespoke and custom software is reviewed prior to release to production to identify and correct potential coding vulnerabilities",
+   "full_text": "Code review by someone other than the author, covering secure coding practice, occurs before release."
+  },
+  {
+   "clause_id": "6.2.4",
+   "requirement_family": 6,
+   "title": "Software engineering techniques are used to prevent or mitigate common software attacks",
+   "full_text": "Injection, cryptographic, business logic, and access control attacks are addressed by engineering technique."
+  },
+  {
+   "clause_id": "6.3.1",
+   "requirement_family": 6,
+   "title": "Security vulnerabilities are identified and managed",
+   "full_text": "New vulnerabilities are identified from recognized sources, assigned a risk ranking, and tracked."
+  },
+  {
+   "clause_id": "6.3.2",
+   "requirement_family": 6,
+   "title": "An inventory of bespoke and custom software and third-party components is maintained",
+   "full_text": "An inventory of software components, including third-party libraries, supports vulnerability management."
+  },
+  {
+   "clause_id": "6.3.3",
+   "requirement_family": 6,
+   "title": "All system components are protected from known vulnerabilities by installing applicable security patches",
+   "full_text": "Critical and high-severity patches are installed within one month of release; others within an appropriate timeframe."
+  },
+  {
+   "clause_id": "6.4.1",
+   "requirement_family": 6,
+   "title": "Public-facing web applications are protected against attacks",
+   "full_text": "Public-facing web applications are reviewed by vulnerability assessment or protected by an automated technical solution."
+  },
+  {
+   "clause_id": "6.4.2",
+   "requirement_family": 6,
+   "title": "An automated technical solution is deployed for public-facing web applications that continually detects and prevents web-based attacks",
+   "full_text": "A WAF or equivalent runs continuously in front of public-facing web applications."
+  },
+  {
+   "clause_id": "6.4.3",
+   "requirement_family": 6,
+   "title": "All payment page scripts loaded and executed in the consumer browser are managed",
+   "full_text": "Each payment page script is authorized, its integrity assured, and an inventory with written justification maintained."
+  },
+  {
+   "clause_id": "6.5.1",
+   "requirement_family": 6,
+   "title": "Changes to all system components in the production environment are made according to established procedures",
+   "full_text": "Changes follow documented procedures covering reason, documented approval, and functionality testing."
+  },
+  {
+   "clause_id": "6.5.2",
+   "requirement_family": 6,
+   "title": "Upon completion of a significant change, all applicable PCI DSS requirements are confirmed to be in place",
+   "full_text": "Applicable requirements are re-verified after a significant change and documentation updated."
+  },
+  {
+   "clause_id": "6.5.3",
+   "requirement_family": 6,
+   "title": "Pre-production environments are separated from production environments",
+   "full_text": "Separation between pre-production and production is enforced with access controls."
+  },
+  {
+   "clause_id": "6.5.4",
+   "requirement_family": 6,
+   "title": "Roles and functions are separated between production and pre-production environments",
+   "full_text": "Duties are separated so that one person cannot move a change to production unchecked."
+  },
+  {
+   "clause_id": "6.5.5",
+   "requirement_family": 6,
+   "title": "Live PANs are not used in pre-production environments, except where those environments are in the CDE",
+   "full_text": "Test environments do not contain live PAN unless included in the CDE and protected accordingly."
+  },
+  {
+   "clause_id": "6.5.6",
+   "requirement_family": 6,
+   "title": "Test data and test accounts are removed from system components before the system goes into production",
+   "full_text": "Test accounts and data are removed prior to production release."
+  },
+  {
+   "clause_id": "7.1.1",
+   "requirement_family": 7,
+   "title": "Processes and mechanisms for restricting access by business need to know are defined and understood",
+   "full_text": "Security policies and operational procedures for Requirement 7 are documented, current, in use, and known to affected parties."
+  },
+  {
+   "clause_id": "7.1.2",
+   "requirement_family": 7,
+   "title": "Roles and responsibilities for Requirement 7 activities are documented and assigned",
+   "full_text": "Roles for access restriction activities are documented, assigned, and understood."
+  },
+  {
+   "clause_id": "7.2.1",
+   "requirement_family": 7,
+   "title": "An access control model is defined and includes granting access as appropriate based on business need",
+   "full_text": "The access model covers needed access per role, privilege level, and least privilege."
+  },
+  {
+   "clause_id": "7.2.2",
+   "requirement_family": 7,
+   "title": "Access is assigned to users based on job classification and function, and least privileges required",
+   "full_text": "Users receive the least privilege needed for their job function."
+  },
+  {
+   "clause_id": "7.2.3",
+   "requirement_family": 7,
+   "title": "Required privileges are approved by authorized personnel",
+   "full_text": "Privilege assignments carry documented approval from authorized personnel."
+  },
+  {
+   "clause_id": "7.2.4",
+   "requirement_family": 7,
+   "title": "All user accounts and related access privileges are reviewed at least once every six months",
+   "full_text": "Account and privilege reviews confirm access remains appropriate and inappropriate access is addressed."
+  },
+  {
+   "clause_id": "7.2.5",
+   "requirement_family": 7,
+   "title": "All application and system accounts and related access privileges are assigned and managed",
+   "full_text": "Application and system accounts run with least privilege for their function."
+  },
+  {
+   "clause_id": "7.2.6",
+   "requirement_family": 7,
+   "title": "All user access to query repositories of stored cardholder data is restricted",
+   "full_text": "Query access to stored cardholder data is limited to programmatic methods and to authorized administrators."
+  },
+  {
+   "clause_id": "7.3.1",
+   "requirement_family": 7,
+   "title": "An access control system is in place that restricts access based on a user's need to know",
+   "full_text": "An access control system covers all system components."
+  },
+  {
+   "clause_id": "7.3.2",
+   "requirement_family": 7,
+   "title": "The access control system is configured to enforce permissions assigned to individuals, applications, and systems based on job classification and function",
+   "full_text": "Permissions are enforced per assigned role."
+  },
+  {
+   "clause_id": "7.3.3",
+   "requirement_family": 7,
+   "title": "The access control system is set to deny all by default",
+   "full_text": "Default deny is the configured behaviour of the access control system."
+  },
+  {
+   "clause_id": "8.1.1",
+   "requirement_family": 8,
+   "title": "Processes and mechanisms for identifying users and authenticating access are defined and understood",
+   "full_text": "Security policies and operational procedures for Requirement 8 are documented, current, in use, and known to affected parties."
+  },
+  {
+   "clause_id": "8.1.2",
+   "requirement_family": 8,
+   "title": "Roles and responsibilities for Requirement 8 activities are documented and assigned",
+   "full_text": "Roles for identification and authentication activities are documented, assigned, and understood."
+  },
+  {
+   "clause_id": "8.2.1",
+   "requirement_family": 8,
+   "title": "All users are assigned a unique ID before access to system components or cardholder data is allowed",
+   "full_text": "Every user has a unique identifier; shared IDs are not used for access."
+  },
+  {
+   "clause_id": "8.2.2",
+   "requirement_family": 8,
+   "title": "Group, shared, or generic accounts are only used when necessary on an exception basis",
+   "full_text": "Shared accounts are exceptional, documented, justified, and their use is attributable to an individual."
+  },
+  {
+   "clause_id": "8.2.3",
+   "requirement_family": 8,
+   "title": "Additional requirement for service providers: customer remote access accounts use unique authentication factors per customer",
+   "full_text": "Service providers use a distinct authentication credential for each customer premises they access."
+  },
+  {
+   "clause_id": "8.2.4",
+   "requirement_family": 8,
+   "title": "Addition, deletion, and modification of user IDs, authentication factors, and other identifier objects are managed",
+   "full_text": "Identity lifecycle changes are authorized with appropriate approval."
+  },
+  {
+   "clause_id": "8.2.5",
+   "requirement_family": 8,
+   "title": "Access for terminated users is immediately revoked",
+   "full_text": "Terminated users lose access immediately."
+  },
+  {
+   "clause_id": "8.2.6",
+   "requirement_family": 8,
+   "title": "Inactive user accounts are removed or disabled within 90 days of inactivity",
+   "full_text": "Accounts inactive for 90 days are disabled or removed."
+  },
+  {
+   "clause_id": "8.2.7",
+   "requirement_family": 8,
+   "title": "Accounts used by third parties are managed",
+   "full_text": "Third-party accounts are enabled only during the period needed, monitored while in use, and disabled after."
+  },
+  {
+   "clause_id": "8.2.8",
+   "requirement_family": 8,
+   "title": "If a user session has been idle for more than 15 minutes, the user is required to re-authenticate",
+   "full_text": "Idle sessions require re-authentication after 15 minutes."
+  },
+  {
+   "clause_id": "8.3.1",
+   "requirement_family": 8,
+   "title": "All user access is authenticated via at least one authentication factor",
+   "full_text": "Access requires at least one of: something you know, have, or are."
+  },
+  {
+   "clause_id": "8.3.2",
+   "requirement_family": 8,
+   "title": "Strong cryptography is used to render all authentication factors unreadable during transmission and storage",
+   "full_text": "Authentication factors are protected by strong cryptography in transit and at rest."
+  },
+  {
+   "clause_id": "8.3.3",
+   "requirement_family": 8,
+   "title": "User identity is verified before modifying any authentication factor",
+   "full_text": "Identity is verified before a credential is changed or reset."
+  },
+  {
+   "clause_id": "8.3.4",
+   "requirement_family": 8,
+   "title": "Invalid authentication attempts are limited by locking out the user ID after not more than 10 attempts",
+   "full_text": "Accounts lock after at most 10 invalid attempts, for at least 30 minutes or until identity is confirmed."
+  },
+  {
+   "clause_id": "8.3.5",
+   "requirement_family": 8,
+   "title": "If passwords are used as authentication factors, they are set and reset securely for each user",
+   "full_text": "Initial and reset passwords are unique per user and changed immediately after first use."
+  },
+  {
+   "clause_id": "8.3.6",
+   "requirement_family": 8,
+   "title": "If passwords are used as authentication factors, they meet the minimum level of complexity",
+   "full_text": "Passwords are at least 12 characters and contain both numeric and alphabetic characters."
+  },
+  {
+   "clause_id": "8.3.7",
+   "requirement_family": 8,
+   "title": "Individuals are not allowed to submit a new password that is the same as any of the last four passwords used",
+   "full_text": "Password history prevents reuse of the previous four passwords."
+  },
+  {
+   "clause_id": "8.3.8",
+   "requirement_family": 8,
+   "title": "Authentication policies and procedures are documented and communicated to all users",
+   "full_text": "Users receive guidance on selecting strong credentials and protecting them."
+  },
+  {
+   "clause_id": "8.3.9",
+   "requirement_family": 8,
+   "title": "If passwords are the only authentication factor, they are changed at least every 90 days or access is dynamically analyzed",
+   "full_text": "Single-factor password access requires 90-day rotation or dynamic risk analysis."
+  },
+  {
+   "clause_id": "8.3.10",
+   "requirement_family": 8,
+   "title": "Additional requirement for service providers: guidance is provided to customers about changing passwords",
+   "full_text": "Service providers give customers password guidance where passwords are the only factor for customer access."
+  },
+  {
+   "clause_id": "8.3.11",
+   "requirement_family": 8,
+   "title": "Where authentication factors such as tokens or smart cards are used, they are assigned to an individual user",
+   "full_text": "Hardware and software tokens are individually assigned, not shared."
+  },
+  {
+   "clause_id": "8.4.1",
+   "requirement_family": 8,
+   "title": "MFA is implemented for all non-console access into the CDE for personnel with administrative access",
+   "full_text": "Administrative non-console access to the CDE requires multi-factor authentication."
+  },
+  {
+   "clause_id": "8.4.2",
+   "requirement_family": 8,
+   "title": "MFA is implemented for all non-console access into the CDE",
+   "full_text": "All non-console CDE access requires multi-factor authentication."
+  },
+  {
+   "clause_id": "8.4.3",
+   "requirement_family": 8,
+   "title": "MFA is implemented for all remote network access originating from outside the entity's network that could access the CDE",
+   "full_text": "Remote access from outside the network requires multi-factor authentication."
+  },
+  {
+   "clause_id": "8.5.1",
+   "requirement_family": 8,
+   "title": "MFA systems are implemented appropriately",
+   "full_text": "MFA is not susceptible to replay, cannot be bypassed without documented exception, uses at least two distinct factor types, and requires all factors to succeed."
+  },
+  {
+   "clause_id": "8.6.1",
+   "requirement_family": 8,
+   "title": "Accounts used by systems or applications that can be used for interactive login are managed",
+   "full_text": "Interactive use of system accounts is prevented, or permitted only exceptionally with individual attribution."
+  },
+  {
+   "clause_id": "8.6.2",
+   "requirement_family": 8,
+   "title": "Passwords for application and system accounts used for interactive login are not hard coded in scripts or files",
+   "full_text": "Credentials for interactive system accounts are not embedded in source, scripts, or configuration files."
+  },
+  {
+   "clause_id": "8.6.3",
+   "requirement_family": 8,
+   "title": "Passwords for application and system accounts are protected against misuse",
+   "full_text": "Such passwords are rotated periodically and have complexity appropriate to the rotation frequency."
+  },
+  {
+   "clause_id": "9.1.1",
+   "requirement_family": 9,
+   "title": "Processes and mechanisms for restricting physical access to cardholder data are defined and understood",
+   "full_text": "Security policies and operational procedures for Requirement 9 are documented, current, in use, and known to affected parties."
+  },
+  {
+   "clause_id": "9.1.2",
+   "requirement_family": 9,
+   "title": "Roles and responsibilities for Requirement 9 activities are documented and assigned",
+   "full_text": "Roles for physical access activities are documented, assigned, and understood."
+  },
+  {
+   "clause_id": "9.2.1",
+   "requirement_family": 9,
+   "title": "Appropriate facility entry controls are in place to restrict physical access to systems in the CDE",
+   "full_text": "Entry controls restrict physical access to CDE facilities."
+  },
+  {
+   "clause_id": "9.2.2",
+   "requirement_family": 9,
+   "title": "Physical and/or logical controls are implemented to restrict use of publicly accessible network jacks",
+   "full_text": "Publicly accessible network jacks are restricted."
+  },
+  {
+   "clause_id": "9.2.3",
+   "requirement_family": 9,
+   "title": "Physical access to wireless access points, gateways, networking hardware, and telecommunication lines is restricted",
+   "full_text": "Network hardware and lines are physically protected."
+  },
+  {
+   "clause_id": "9.2.4",
+   "requirement_family": 9,
+   "title": "Access to consoles in sensitive areas is restricted via locking when not in use",
+   "full_text": "Consoles in sensitive areas are locked when unattended."
+  },
+  {
+   "clause_id": "9.3.1",
+   "requirement_family": 9,
+   "title": "Procedures are implemented for authorizing and managing physical access of personnel to the CDE",
+   "full_text": "Personnel access to the CDE is authorized, identified, and revoked on termination."
+  },
+  {
+   "clause_id": "9.3.2",
+   "requirement_family": 9,
+   "title": "Procedures are implemented for authorizing and managing visitor access to the CDE",
+   "full_text": "Visitors are authorized, escorted, and identifiable."
+  },
+  {
+   "clause_id": "9.3.3",
+   "requirement_family": 9,
+   "title": "Visitor badges or identification are surrendered or deactivated before visitors leave",
+   "full_text": "Visitor identification is collected or deactivated on departure."
+  },
+  {
+   "clause_id": "9.3.4",
+   "requirement_family": 9,
+   "title": "A visitor log is used to maintain a physical record of visitor activity",
+   "full_text": "A visitor log records name, organization, and authorizing person, and is retained for at least three months."
+  },
+  {
+   "clause_id": "9.4.1",
+   "requirement_family": 9,
+   "title": "All media with cardholder data is physically secured",
+   "full_text": "Media containing cardholder data is stored securely."
+  },
+  {
+   "clause_id": "9.4.2",
+   "requirement_family": 9,
+   "title": "All media with cardholder data is classified in accordance with the sensitivity of the data",
+   "full_text": "Media is classified according to data sensitivity."
+  },
+  {
+   "clause_id": "9.4.3",
+   "requirement_family": 9,
+   "title": "Media with cardholder data sent outside the facility is secured",
+   "full_text": "Media sent outside is sent by secured courier with tracking."
+  },
+  {
+   "clause_id": "9.4.4",
+   "requirement_family": 9,
+   "title": "Management approves all media with cardholder data that is moved outside the facility",
+   "full_text": "Management approval precedes movement of media outside the facility."
+  },
+  {
+   "clause_id": "9.4.5",
+   "requirement_family": 9,
+   "title": "Inventory logs of all electronic media with cardholder data are maintained",
+   "full_text": "Electronic media inventory logs are maintained and reconciled at least annually."
+  },
+  {
+   "clause_id": "9.4.6",
+   "requirement_family": 9,
+   "title": "Hard-copy materials with cardholder data are destroyed when no longer needed",
+   "full_text": "Hard copy is cross-cut shredded, incinerated, or pulped beyond reconstruction."
+  },
+  {
+   "clause_id": "9.4.7",
+   "requirement_family": 9,
+   "title": "Electronic media with cardholder data is destroyed when no longer needed",
+   "full_text": "Electronic media is destroyed or rendered irrecoverable."
+  },
+  {
+   "clause_id": "9.5.1",
+   "requirement_family": 9,
+   "title": "POI devices that capture payment card data via direct physical interaction are protected from tampering and unauthorized substitution",
+   "full_text": "POI devices are inventoried, periodically inspected, and personnel trained to detect tampering."
+  },
+  {
+   "clause_id": "10.1.1",
+   "requirement_family": 10,
+   "title": "Processes and mechanisms for logging and monitoring all access are defined and understood",
+   "full_text": "Security policies and operational procedures for Requirement 10 are documented, current, in use, and known to affected parties."
+  },
+  {
+   "clause_id": "10.1.2",
+   "requirement_family": 10,
+   "title": "Roles and responsibilities for Requirement 10 activities are documented and assigned",
+   "full_text": "Roles for logging and monitoring activities are documented, assigned, and understood."
+  },
+  {
+   "clause_id": "10.2.1",
+   "requirement_family": 10,
+   "title": "Audit logs are enabled and active for all system components and cardholder data",
+   "full_text": "Audit logging is enabled across all system components."
+  },
+  {
+   "clause_id": "10.2.2",
+   "requirement_family": 10,
+   "title": "Audit logs record specified details for each auditable event",
+   "full_text": "Each log entry records user, event type, date and time, success or failure, origin, and affected data or resource."
+  },
+  {
+   "clause_id": "10.3.1",
+   "requirement_family": 10,
+   "title": "Read access to audit log files is limited to those with a job-related need",
+   "full_text": "Audit log read access is restricted by job need."
+  },
+  {
+   "clause_id": "10.3.2",
+   "requirement_family": 10,
+   "title": "Audit log files are protected to prevent modifications by individuals",
+   "full_text": "Logs are protected from modification."
+  },
+  {
+   "clause_id": "10.3.3",
+   "requirement_family": 10,
+   "title": "Audit log files, including those for external-facing technologies, are promptly backed up to a secure, central, internal log server",
+   "full_text": "Logs are backed up promptly to a secure central location."
+  },
+  {
+   "clause_id": "10.3.4",
+   "requirement_family": 10,
+   "title": "File integrity monitoring or change-detection mechanisms are used on audit logs",
+   "full_text": "Change detection alerts on modification of existing log data."
+  },
+  {
+   "clause_id": "10.4.1",
+   "requirement_family": 10,
+   "title": "Audit logs for specified system components are reviewed at least once daily",
+   "full_text": "Daily review covers security events, CDE components, and critical security control systems."
+  },
+  {
+   "clause_id": "10.4.2",
+   "requirement_family": 10,
+   "title": "Logs of all other system components are reviewed periodically",
+   "full_text": "Non-critical component logs are reviewed on a risk-defined frequency."
+  },
+  {
+   "clause_id": "10.4.3",
+   "requirement_family": 10,
+   "title": "Exceptions and anomalies identified during the review process are addressed",
+   "full_text": "Identified anomalies are investigated and resolved."
+  },
+  {
+   "clause_id": "10.5.1",
+   "requirement_family": 10,
+   "title": "Retain audit log history for at least 12 months, with at least the most recent three months immediately available",
+   "full_text": "Twelve months of log history is retained, three months immediately available for analysis."
+  },
+  {
+   "clause_id": "10.6.1",
+   "requirement_family": 10,
+   "title": "System clocks and time are synchronized using time-synchronization technology",
+   "full_text": "Time synchronization technology is in use across systems."
+  },
+  {
+   "clause_id": "10.6.2",
+   "requirement_family": 10,
+   "title": "Systems are configured to the correct and consistent time",
+   "full_text": "Time settings derive from accepted external sources and are consistent."
+  },
+  {
+   "clause_id": "10.6.3",
+   "requirement_family": 10,
+   "title": "Time synchronization settings and data are protected",
+   "full_text": "Time data access is restricted and changes are logged and reviewed."
+  },
+  {
+   "clause_id": "10.7.1",
+   "requirement_family": 10,
+   "title": "Additional requirement for service providers: failures of critical security control systems are detected, alerted, and addressed promptly",
+   "full_text": "Service providers detect and respond to failures of critical security controls."
+  },
+  {
+   "clause_id": "10.7.2",
+   "requirement_family": 10,
+   "title": "Failures of critical security control systems are detected, alerted, and addressed promptly",
+   "full_text": "Failures of controls such as NSCs, anti-malware, logging, and monitoring are detected and responded to."
+  },
+  {
+   "clause_id": "10.7.3",
+   "requirement_family": 10,
+   "title": "Failures of any critical security controls systems are responded to promptly",
+   "full_text": "Response includes restoring function, identifying cause, and addressing any resulting security issues."
+  },
+  {
+   "clause_id": "11.1.1",
+   "requirement_family": 11,
+   "title": "Processes and mechanisms for regularly testing security of systems and networks are defined and understood",
+   "full_text": "Security policies and operational procedures for Requirement 11 are documented, current, in use, and known to affected parties."
+  },
+  {
+   "clause_id": "11.1.2",
+   "requirement_family": 11,
+   "title": "Roles and responsibilities for Requirement 11 activities are documented and assigned",
+   "full_text": "Roles for security testing activities are documented, assigned, and understood."
+  },
+  {
+   "clause_id": "11.2.1",
+   "requirement_family": 11,
+   "title": "Authorized and unauthorized wireless access points are managed and a list is maintained",
+   "full_text": "Wireless access points are detected and inventoried on a defined frequency."
+  },
+  {
+   "clause_id": "11.2.2",
+   "requirement_family": 11,
+   "title": "An inventory of authorized wireless access points is maintained",
+   "full_text": "Authorized wireless access points are inventoried with documented business justification."
+  },
+  {
+   "clause_id": "11.3.1",
+   "requirement_family": 11,
+   "title": "Internal vulnerability scans are performed at least once every three months",
+   "full_text": "Internal scans run quarterly, with high-risk and critical vulnerabilities resolved and rescans performed."
+  },
+  {
+   "clause_id": "11.3.2",
+   "requirement_family": 11,
+   "title": "External vulnerability scans are performed at least once every three months by an ASV",
+   "full_text": "Quarterly external scans by an Approved Scanning Vendor are passed, with rescans as needed."
+  },
+  {
+   "clause_id": "11.4.1",
+   "requirement_family": 11,
+   "title": "A penetration testing methodology is defined, documented, and implemented",
+   "full_text": "The methodology covers industry-accepted approaches, scope, testing types, retention, and retesting."
+  },
+  {
+   "clause_id": "11.4.2",
+   "requirement_family": 11,
+   "title": "Internal penetration testing is performed at least once every 12 months",
+   "full_text": "Annual internal penetration testing is performed by a qualified, organizationally independent tester."
+  },
+  {
+   "clause_id": "11.4.3",
+   "requirement_family": 11,
+   "title": "External penetration testing is performed at least once every 12 months",
+   "full_text": "Annual external penetration testing is performed by a qualified, organizationally independent tester."
+  },
+  {
+   "clause_id": "11.4.4",
+   "requirement_family": 11,
+   "title": "Exploitable vulnerabilities and security weaknesses found during penetration testing are corrected",
+   "full_text": "Findings are corrected per risk ranking and retested to verify correction."
+  },
+  {
+   "clause_id": "11.4.5",
+   "requirement_family": 11,
+   "title": "If segmentation is used, penetration tests are performed on segmentation controls at least every 12 months",
+   "full_text": "Segmentation controls are penetration tested annually to confirm isolation of the CDE."
+  },
+  {
+   "clause_id": "11.4.6",
+   "requirement_family": 11,
+   "title": "Additional requirement for service providers: segmentation controls are penetration tested at least every six months",
+   "full_text": "Service providers test segmentation controls every six months and after any change."
+  },
+  {
+   "clause_id": "11.4.7",
+   "requirement_family": 11,
+   "title": "Additional requirement for multi-tenant service providers: external penetration testing support is provided to customers",
+   "full_text": "Multi-tenant service providers support customer external penetration testing."
+  },
+  {
+   "clause_id": "11.5.1",
+   "requirement_family": 11,
+   "title": "Intrusion-detection and/or intrusion-prevention techniques are used to detect and/or prevent intrusions into the network",
+   "full_text": "IDS/IPS monitors traffic at the CDE perimeter and critical points, alerting on suspected compromise."
+  },
+  {
+   "clause_id": "11.5.2",
+   "requirement_family": 11,
+   "title": "A change-detection mechanism is deployed to alert personnel to unauthorized modification of critical files",
+   "full_text": "File integrity monitoring alerts on unauthorized change to critical system, configuration, or content files."
+  },
+  {
+   "clause_id": "11.6.1",
+   "requirement_family": 11,
+   "title": "A change- and tamper-detection mechanism is deployed for payment pages",
+   "full_text": "Alerts fire on unauthorized modification to HTTP headers and payment page content, evaluated at least weekly."
+  },
+  {
+   "clause_id": "12.1.1",
+   "requirement_family": 12,
+   "title": "An overall information security policy is established, published, maintained, and disseminated",
+   "full_text": "A security policy exists, is reviewed at least annually, and is communicated to all relevant personnel."
+  },
+  {
+   "clause_id": "12.1.2",
+   "requirement_family": 12,
+   "title": "The information security policy is reviewed at least once every 12 months and updated as needed",
+   "full_text": "Annual policy review reflects changes to business objectives and risk."
+  },
+  {
+   "clause_id": "12.1.3",
+   "requirement_family": 12,
+   "title": "The security policy clearly defines information security roles and responsibilities",
+   "full_text": "Roles and responsibilities are defined and formally acknowledged by personnel."
+  },
+  {
+   "clause_id": "12.1.4",
+   "requirement_family": 12,
+   "title": "Responsibility for information security is formally assigned to a Chief Information Security Officer or knowledgeable executive",
+   "full_text": "Executive accountability for information security is formally assigned."
+  },
+  {
+   "clause_id": "12.2.1",
+   "requirement_family": 12,
+   "title": "Acceptable use policies for end-user technologies are documented and implemented",
+   "full_text": "Acceptable use policies cover approval, authentication, inventory, and acceptable uses of end-user technologies."
+  },
+  {
+   "clause_id": "12.3.1",
+   "requirement_family": 12,
+   "title": "Each PCI DSS requirement providing flexibility for how frequently it is performed is supported by a targeted risk analysis",
+   "full_text": "Targeted risk analyses justify the chosen frequency for flexible requirements and are reviewed annually."
+  },
+  {
+   "clause_id": "12.3.2",
+   "requirement_family": 12,
+   "title": "A targeted risk analysis is performed for each PCI DSS requirement met with the customized approach",
+   "full_text": "Customized approach implementations are supported by a documented targeted risk analysis."
+  },
+  {
+   "clause_id": "12.3.3",
+   "requirement_family": 12,
+   "title": "Cryptographic cipher suites and protocols in use are documented and reviewed at least once every 12 months",
+   "full_text": "An inventory of cipher suites and protocols is maintained and reviewed annually for continued viability."
+  },
+  {
+   "clause_id": "12.3.4",
+   "requirement_family": 12,
+   "title": "Hardware and software technologies in use are reviewed at least once every 12 months",
+   "full_text": "Annual technology review covers end-of-life status, vendor support, and remediation plans."
+  },
+  {
+   "clause_id": "12.4.1",
+   "requirement_family": 12,
+   "title": "Additional requirement for service providers: responsibility is established for protecting cardholder data and a PCI DSS compliance program",
+   "full_text": "Service provider executive management establishes accountability for the compliance program."
+  },
+  {
+   "clause_id": "12.4.2",
+   "requirement_family": 12,
+   "title": "Additional requirement for service providers: reviews are performed at least once every three months to confirm personnel are performing security tasks",
+   "full_text": "Quarterly reviews confirm security tasks are being performed as documented."
+  },
+  {
+   "clause_id": "12.5.1",
+   "requirement_family": 12,
+   "title": "An inventory of system components in scope for PCI DSS is maintained and kept current",
+   "full_text": "A current inventory of in-scope system components with descriptions is maintained."
+  },
+  {
+   "clause_id": "12.5.2",
+   "requirement_family": 12,
+   "title": "PCI DSS scope is documented and confirmed at least once every 12 months and upon significant change",
+   "full_text": "Annual scope confirmation identifies all data flows, locations, and connected system components."
+  },
+  {
+   "clause_id": "12.5.3",
+   "requirement_family": 12,
+   "title": "Additional requirement for service providers: significant organizational change results in documented review of PCI DSS scope",
+   "full_text": "Organizational change triggers a documented scope review reported to executive management."
+  },
+  {
+   "clause_id": "12.6.1",
+   "requirement_family": 12,
+   "title": "A formal security awareness program is implemented to make personnel aware of the information security policy",
+   "full_text": "A security awareness program covers the security policy and personnel role in protecting account data."
+  },
+  {
+   "clause_id": "12.6.2",
+   "requirement_family": 12,
+   "title": "The security awareness program is reviewed at least once every 12 months and updated as needed",
+   "full_text": "Annual review addresses new threats and vulnerabilities."
+  },
+  {
+   "clause_id": "12.6.3",
+   "requirement_family": 12,
+   "title": "Personnel receive security awareness training upon hire and at least once every 12 months",
+   "full_text": "Training occurs on hire and annually, with personnel acknowledging they understand the policy."
+  },
+  {
+   "clause_id": "12.7.1",
+   "requirement_family": 12,
+   "title": "Potential personnel who will have access to the CDE are screened prior to hire",
+   "full_text": "Pre-hire screening reduces insider-threat risk for CDE access."
+  },
+  {
+   "clause_id": "12.8.1",
+   "requirement_family": 12,
+   "title": "A list of all third-party service providers with which account data is shared is maintained",
+   "full_text": "A TPSP list records each provider and a description of the service."
+  },
+  {
+   "clause_id": "12.8.2",
+   "requirement_family": 12,
+   "title": "Written agreements with TPSPs are maintained",
+   "full_text": "Agreements acknowledge TPSP responsibility for the security of account data they possess or can affect."
+  },
+  {
+   "clause_id": "12.8.3",
+   "requirement_family": 12,
+   "title": "An established process is implemented for engaging TPSPs, including proper due diligence prior to engagement",
+   "full_text": "Due diligence precedes TPSP engagement."
+  },
+  {
+   "clause_id": "12.8.4",
+   "requirement_family": 12,
+   "title": "A program is implemented to monitor TPSPs' PCI DSS compliance status at least once every 12 months",
+   "full_text": "TPSP compliance status is monitored annually."
+  },
+  {
+   "clause_id": "12.8.5",
+   "requirement_family": 12,
+   "title": "Information is maintained about which PCI DSS requirements are managed by each TPSP, by the entity, or shared",
+   "full_text": "A responsibility matrix records the split of requirement ownership."
+  },
+  {
+   "clause_id": "12.9.1",
+   "requirement_family": 12,
+   "title": "Additional requirement for service providers: written acknowledgements are provided to customers",
+   "full_text": "Service providers acknowledge in writing their responsibility for account data security."
+  },
+  {
+   "clause_id": "12.9.2",
+   "requirement_family": 12,
+   "title": "Additional requirement for service providers: information about PCI DSS compliance status is supported for customers",
+   "full_text": "Service providers supply compliance information on customer request."
+  },
+  {
+   "clause_id": "12.10.1",
+   "requirement_family": 12,
+   "title": "An incident response plan exists and is ready to be activated in the event of a suspected or confirmed security incident",
+   "full_text": "The plan covers roles, communication, containment, legal requirements, coverage of all critical components, and reference to brand procedures."
+  },
+  {
+   "clause_id": "12.10.2",
+   "requirement_family": 12,
+   "title": "The security incident response plan is reviewed and tested at least once every 12 months",
+   "full_text": "Annual review and testing covers all plan elements."
+  },
+  {
+   "clause_id": "12.10.3",
+   "requirement_family": 12,
+   "title": "Specific personnel are designated to be available on a 24/7 basis to respond to security incidents",
+   "full_text": "24/7 incident response availability is designated."
+  },
+  {
+   "clause_id": "12.10.4",
+   "requirement_family": 12,
+   "title": "Personnel responsible for responding to security incidents are appropriately and periodically trained",
+   "full_text": "Incident responders are periodically trained on breach and incident response."
+  },
+  {
+   "clause_id": "12.10.5",
+   "requirement_family": 12,
+   "title": "The security incident response plan includes monitoring and responding to alerts from security monitoring systems",
+   "full_text": "The plan covers alerts from IDS/IPS, change detection, and payment page tamper detection."
+  },
+  {
+   "clause_id": "12.10.6",
+   "requirement_family": 12,
+   "title": "The security incident response plan is modified and evolved according to lessons learned and industry developments",
+   "full_text": "Lessons learned feed back into the plan."
+  },
+  {
+   "clause_id": "12.10.7",
+   "requirement_family": 12,
+   "title": "Incident response procedures are in place, to be initiated upon the detection of stored PAN anywhere it is not expected",
+   "full_text": "Unexpected stored PAN triggers a defined response including determining source and remediating leakage."
+  }
+ ]
+}

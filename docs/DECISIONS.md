@@ -269,6 +269,9 @@ Every downstream component — embedding, vector retrieval, scope suggestion, ev
 ## Alternatives Considered
 Ingesting the published text directly — rejected; the coding agent cannot verify the firm holds redistribution rights, and 06_ENGINEERING_RULES.md's precedence rules do not grant authority to resolve a legal question by assumption. Shipping an empty corpus — rejected; it blocks TASK-018/019 testing for no gain over a summary corpus.
 
+## Granularity note
+07_TASKS.md estimates "~78 base requirements". PCI DSS numbers clauses at two levels: base requirements (`x.y`) and the defined requirements beneath them (`x.y.z`). Evidence matches at the finer level — a firewall configuration satisfies `1.2.1`, not all of `1.2` — so rows are stored at `x.y.z`. The shipped corpus holds 205 defined requirements spanning 63 base requirements across all 12 families. Both counts are pinned by a test so a future corpus swap that changes granularity fails loudly instead of silently changing what "scope" means.
+
 ## Consequences
 Retrieval and matching quality in the POC reflect summary text, not the literal standard. This is acceptable for validating the workflow (00_PRODUCT.md §5.6's functional criterion) but **must** be resolved before TASK-025 processes real client evidence, because a finding citing a paraphrase is not an audit-grade citation. `PCIRequirement.corpus_version` is set to `v4.0.1-summary` so no engagement can silently cite the skeleton as if it were the standard.
 

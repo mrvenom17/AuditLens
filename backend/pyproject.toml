@@ -75,7 +75,9 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["S105", "S106"]   # hardcoded test passwords are fixtures, not secrets
+# Hardcoded passwords in test fixtures are fixtures, not secrets. The real
+# guard against committed credentials is the CI secret scan, not this rule.
+"tests/*" = ["S105", "S106", "S107"]
 "migrations/*" = ["E501"]
 
 [tool.mypy]
