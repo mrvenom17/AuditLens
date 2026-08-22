@@ -78,12 +78,13 @@ async def request_context_middleware(
 
 def _envelope(code: str, message: str, status_code: int, **details: object) -> JSONResponse:
     """The single error shape every endpoint returns (02_ARCHITECTURE.md §7.7)."""
-    body: dict[str, object] = {
-        "error": {"code": code, "message": message, "request_id": get_request_id()}
+    error: dict[str, object] = {
+        "code": code,
+        "message": message,
+        "request_id": get_request_id(),
+        **details,
     }
-    if details:
-        body["error"].update(details)  # type: ignore[union-attr]
-    return JSONResponse(status_code=status_code, content=body)
+    return JSONResponse(status_code=status_code, content={"error": error})
 
 
 @app.exception_handler(AppError)
@@ -132,6 +133,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
     )
 
 
-from app.api.routes import health  # noqa: E402  (registered after handlers exist)
+from app.api.routes import auth, health  # noqa: E402  (registered after handlers exist)
 
 app.include_router(health.router)
+app.include_router(auth.router)

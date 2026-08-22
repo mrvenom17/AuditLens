@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import Connection, create_engine, text
 from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.orm import Session
@@ -112,6 +113,28 @@ def db(connection: Connection) -> Iterator[Session]:
         yield session
     finally:
         session.close()
+
+
+@pytest.fixture
+def api_client(db: Session) -> Iterator[TestClient]:
+    """A TestClient whose requests run inside the test's own transaction.
+
+    Overriding `get_db` to yield the test session is what lets an HTTP test and
+    the factory fixtures see the same uncommitted rows, and lets the whole
+    request be rolled back afterwards. `commit()` inside a request lands on a
+    savepoint (see the `db` fixture), so route code behaves exactly as it does
+    in production.
+    """
+    from app.db.session import get_db
+    from app.main import app
+
+    def _override_get_db() -> Iterator[Session]:
+        yield db
+
+    app.dependency_overrides[get_db] = _override_get_db
+    with TestClient(app) as client:
+        yield client
+    app.dependency_overrides.clear()
 
 
 # --- Factories ---------------------------------------------------------------

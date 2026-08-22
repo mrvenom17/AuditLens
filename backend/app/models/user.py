@@ -7,7 +7,7 @@ from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, String
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
 from app.db.base import Base, TimestampMixin, created_at_column, uuid_pk
 from app.models.enums import Role
@@ -27,6 +27,18 @@ class User(Base, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     sessions: Mapped[list[Session]] = relationship(back_populates="user")
+
+    @validates("email")
+    def _normalise_email(self, _key: str, value: str) -> str:
+        """Store emails lowercased and trimmed, on every write path.
+
+        The unique constraint is byte-wise, so without this "Bob@firm.com" and
+        "bob@firm.com" would be two accounts for one person — and login, which
+        normalises before lookup, would only ever reach one of them. Normalising
+        at the model means the seed script and any future direct construction
+        get it too, not just the repository.
+        """
+        return value.strip().lower()
 
 
 class Session(Base):
