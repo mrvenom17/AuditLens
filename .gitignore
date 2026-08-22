@@ -1,0 +1,32 @@
+# Secrets — never committed (05_SECURITY.md §10.6)
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+
+# Node
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+
+# Evidence storage — client data never enters version control
+/data/
+backend/data/
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
