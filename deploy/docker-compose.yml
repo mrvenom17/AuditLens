@@ -1,0 +1,105 @@
+# AuditLens — local development stack (09_DEPLOYMENT.md § Environments).
+# The production overlay lives in docker-compose.prod.yml.
+#
+# Secrets come from an env file that is never committed and never baked into an
+# image (05_SECURITY.md §10.6).
+
+name: auditlens
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: auditlens
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-auditlens_local_dev}
+      POSTGRES_DB: auditlens
+    ports:
+      # Bound to loopback only, and to 5433 so it never collides with a
+      # developer's locally-installed Postgres. Containers still reach it on
+      # 5432 over the compose network.
+      - "127.0.0.1:${DB_HOST_PORT:-5433}:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U auditlens -d auditlens"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Migrations run as an explicit step that must succeed before the app starts.
+  # 09_DEPLOYMENT.md § Database Deployment: a failed migration halts startup
+  # rather than leaving the app running against a half-migrated schema.
+  migrate:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    command: ["alembic", "upgrade", "head"]
+    env_file: ../backend/.env
+    environment:
+      DATABASE_URL: postgresql+psycopg://auditlens:${POSTGRES_PASSWORD:-auditlens_local_dev}@db:5432/auditlens
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    command:
+      ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
+    env_file: ../backend/.env
+    environment:
+      DATABASE_URL: postgresql+psycopg://auditlens:${POSTGRES_PASSWORD:-auditlens_local_dev}@db:5432/auditlens
+      FILE_STORAGE_PATH: /data/evidence
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - evidence_data:/data/evidence
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # Same image, different entrypoint: the pipeline runs in its own process so a
+  # large evidence batch never competes with request handling
+  # (02_ARCHITECTURE.md §7.1, §7.9).
+  worker:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+      target: worker
+    command: ["python", "-m", "app.pipelines.worker"]
+    env_file: ../backend/.env
+    environment:
+      DATABASE_URL: postgresql+psycopg://auditlens:${POSTGRES_PASSWORD:-auditlens_local_dev}@db:5432/auditlens
+      FILE_STORAGE_PATH: /data/evidence
+    volumes:
+      - evidence_data:/data/evidence
+      - model_cache:/models
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  web:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    environment:
+      # Server-side calls go container-to-container; the browser never sees this.
+      API_INTERNAL_URL: http://api:8000
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      api:
+        condition: service_started
+
+volumes:
+  db_data:
+  evidence_data:
+  model_cache:

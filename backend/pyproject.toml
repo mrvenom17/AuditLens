@@ -1,0 +1,99 @@
+[project]
+name = "auditlens-backend"
+version = "0.1.0"
+description = "AuditLens — PCI DSS v4.0.1 audit assistant backend"
+requires-python = ">=3.12"
+
+dependencies = [
+    # Web framework + server (02_ARCHITECTURE.md §7.2)
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "python-multipart>=0.0.12",     # multipart/form-data uploads (04_API_CONTRACT.md)
+
+    # Config + validation (06_ENGINEERING_RULES.md: Pydantic schema on every boundary)
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "email-validator>=2.2",
+
+    # Data layer (02_ARCHITECTURE.md §7.2)
+    "sqlalchemy>=2.0.36",
+    "alembic>=1.14",
+    "psycopg[binary]>=3.2",
+    "pgvector>=0.3.6",
+
+    # Password hashing — Argon2id only, no custom crypto (05_SECURITY.md §10.2)
+    "argon2-cffi>=23.1",
+
+    # LLM provider (ADR-009)
+    "anthropic>=0.39",
+    "httpx>=0.27",
+
+    # Passive document extraction only — no macro/script execution
+    # (01_REQUIREMENTS.md §Evidence Ingestion, Explicitly Forbidden Behavior)
+    "pypdf>=5.1",
+    "python-docx>=1.1",
+    "openpyxl>=3.1",
+    "pillow>=11.0",
+    "pytesseract>=0.3.13",
+
+    # Report export (01_REQUIREMENTS.md §Finalization: PDF generation, local/self-hosted)
+    "reportlab>=4.2",
+]
+
+[project.optional-dependencies]
+# Kept out of the API image: torch pulls ~2GB and is only needed by the worker
+# process that actually computes embeddings (ADR-005, ADR-009).
+embeddings = [
+    "sentence-transformers>=3.3",
+]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "types-reportlab",
+    "pip-audit>=2.7",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S", "C4", "SIM", "RUF"]
+ignore = [
+    "S101",  # assert — used deliberately in tests
+    "B008",  # function call in default arg — this is how FastAPI Depends() works
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S105", "S106"]   # hardcoded test passwords are fixtures, not secrets
+"migrations/*" = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+disallow_untyped_defs = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["pytesseract.*", "pgvector.*", "reportlab.*", "sentence_transformers.*", "docx.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    # 08_TESTING.md: real-API tests run on a schedule, not on every commit
+    "real_api: hits live external services; excluded from the default run",
+]
+addopts = "-m 'not real_api' --strict-markers"
