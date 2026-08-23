@@ -209,7 +209,15 @@ class FinalizationService:
                         "ai_confidence": finding.ai_confidence,
                         "ai_rationale": finding.ai_rationale,
                         "citations": finding.citations,
-                        "reviewed_by": reviewer_names.get(finding.reviewed_by, "unknown"),
+                        # An approved Finding always has a reviewer — the
+                        # ck_approved_requires_reviewer constraint guarantees it
+                        # — but the report must stay renderable even if a
+                        # deactivated user's name can no longer be resolved.
+                        "reviewed_by": (
+                            reviewer_names.get(finding.reviewed_by, "unknown")
+                            if finding.reviewed_by is not None
+                            else "unknown"
+                        ),
                         "reviewed_at": finding.reviewed_at.isoformat()
                         if finding.reviewed_at
                         else None,

@@ -88,7 +88,14 @@ disallow_untyped_defs = true
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["pytesseract.*", "pgvector.*", "reportlab.*", "sentence_transformers.*", "docx.*"]
+module = [
+    "pytesseract.*",
+    "pgvector.*",
+    "reportlab.*",
+    "sentence_transformers.*",
+    "docx.*",
+    "openpyxl.*",
+]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

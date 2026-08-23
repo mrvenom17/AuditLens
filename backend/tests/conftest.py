@@ -115,6 +115,20 @@ def db(connection: Connection) -> Iterator[Session]:
         session.close()
 
 
+@pytest.fixture(autouse=True)
+def isolated_file_storage(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Point evidence storage at a per-test temporary directory.
+
+    Autouse because a test that writes a real file into the configured storage
+    root would leave it there — uploaded evidence is append-only by design, so
+    nothing in the application will ever clean it up.
+    """
+    storage = tmp_path / "evidence-storage"
+    storage.mkdir()
+    monkeypatch.setattr(settings, "FILE_STORAGE_PATH", str(storage))
+    return storage
+
+
 @pytest.fixture
 def api_client(db: Session) -> Iterator[TestClient]:
     """A TestClient whose requests run inside the test's own transaction.

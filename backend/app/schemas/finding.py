@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, Field, computed_field
 
@@ -131,4 +132,4 @@ class ReportResponse(ORMModel):
     engagement_id: uuid.UUID
     generated_by: uuid.UUID
     generated_at: datetime
-    snapshot_data: dict
+    snapshot_data: dict[str, Any]
