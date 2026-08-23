@@ -1,0 +1,169 @@
+# AuditLens — production overlay (09_DEPLOYMENT.md).
+#
+# Applied on top of docker-compose.yml:
+#     docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# What this overlay changes, and why each matters:
+#
+#  * No host ports are published for the database or the API. The only path in
+#    is the Cloudflare Tunnel, which connects outbound. 09_DEPLOYMENT.md
+#    requires "no direct unencrypted origin exposure"; the way to guarantee that
+#    is for the origin to have no inbound listener at all.
+#  * Secrets come from an env file that is never baked into an image
+#    (05_SECURITY.md §10.6).
+#  * Log rotation is configured per service — 09_DEPLOYMENT.md calls out
+#    unbounded log growth on a small server as a real operational risk.
+#  * Containers run read-only where they can, with an explicit tmpfs. An
+#    uploaded file is untrusted input parsed by libraries in these containers;
+#    a read-only root filesystem is the cheapest limit on what a parser bug can
+#    do next.
+
+name: auditlens
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+x-restart: &default-restart
+  restart: unless-stopped
+
+services:
+  db:
+    # `!reset` removes the base file's mapping. A bare `ports: []` would NOT:
+    # Compose *merges* sequences across files, so an empty list is a no-op and
+    # the loopback mapping would survive into production. Verified by
+    # inspecting `docker compose config`, not assumed.
+    ports: !reset null
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER must be set}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      POSTGRES_DB: ${POSTGRES_DB:-auditlens}
+      # Checksums surface silent corruption on the consumer-grade storage a
+      # self-hosted box is likely to be using. These are professional audit
+      # records; finding out at restore time is too late.
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./backups:/backups
+    logging: *default-logging
+    <<: *default-restart
+
+  migrate:
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set}
+      ENVIRONMENT: production
+    logging: *default-logging
+    # Explicitly not restarted: this is a one-shot gate. A migration that fails
+    # must halt the deploy rather than loop, which is the documented past
+    # failure pattern 09_DEPLOYMENT.md asks this process to guard against.
+    restart: "no"
+
+  api:
+    ports: !reset null
+    environment:
+      ENVIRONMENT: production
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set}
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be set}
+      LLM_API_KEY: ${LLM_API_KEY:?LLM_API_KEY must be set}
+      CORS_ALLOWED_ORIGIN: ${CORS_ALLOWED_ORIGIN:?CORS_ALLOWED_ORIGIN must be set}
+      FILE_STORAGE_PATH: /data/evidence
+    volumes:
+      - evidence_data:/data/evidence
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging: *default-logging
+    <<: *default-restart
+    deploy:
+      resources:
+        limits:
+          # A runaway request must not take the whole box down with it; this is
+          # a shared self-hosted server (ADR-007).
+          memory: 1g
+
+  worker:
+    environment:
+      ENVIRONMENT: production
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set}
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be set}
+      LLM_API_KEY: ${LLM_API_KEY:?LLM_API_KEY must be set}
+      CORS_ALLOWED_ORIGIN: ${CORS_ALLOWED_ORIGIN:?CORS_ALLOWED_ORIGIN must be set}
+      FILE_STORAGE_PATH: /data/evidence
+      HF_HOME: /models
+    volumes:
+      - evidence_data:/data/evidence
+      - model_cache:/models
+    # Not read_only: the embedding model downloads into /models on first run.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging: *default-logging
+    <<: *default-restart
+    deploy:
+      resources:
+        limits:
+          # The embedding model is the memory floor here, not the ceiling.
+          memory: 4g
+
+  web:
+    ports: !reset null
+    environment:
+      NODE_ENV: production
+      API_INTERNAL_URL: http://api:8000
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging: *default-logging
+    <<: *default-restart
+
+  # The only ingress. Connects outbound to Cloudflare and forwards to `web`
+  # over the compose network, so the origin never listens on a public interface
+  # (09_DEPLOYMENT.md § Deployment Security).
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?TUNNEL_TOKEN must be set}
+    depends_on:
+      web:
+        condition: service_started
+      api:
+        condition: service_healthy
+    logging: *default-logging
+    <<: *default-restart
+
+  # Scheduled pg_dump. 09_DEPLOYMENT.md: "this is not optional at this
+  # sensitivity level even at POC scale."
+  backup:
+    image: pgvector/pgvector:pg16
+    entrypoint: ["/bin/sh", "/scripts/backup.sh"]
+    environment:
+      PGHOST: db
+      PGUSER: ${POSTGRES_USER:?POSTGRES_USER must be set}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      PGDATABASE: ${POSTGRES_DB:-auditlens}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-30}
+    volumes:
+      - ./backups:/backups
+      - ./scripts:/scripts:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    logging: *default-logging
+    <<: *default-restart
+
+volumes:
+  db_data:
+  evidence_data:
+  model_cache:

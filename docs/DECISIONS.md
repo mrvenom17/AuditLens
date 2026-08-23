@@ -377,3 +377,61 @@ Low — the worker's claim/advance logic is confined to `/backend/app/pipelines/
 
 ## Date
 2026-08-22
+
+---
+
+# ADR-014: Production ingress is Cloudflare Tunnel only, with no published host ports
+
+## Status
+Accepted
+
+## Context
+09_DEPLOYMENT.md requires "HTTPS enforced via Cloudflare Tunnel — no direct unencrypted origin exposure". TASK-024 had to turn that sentence into a configuration, and the first attempt did not achieve it.
+
+## Decision
+In the production overlay, `api`, `web` and `db` all declare `ports: !reset null`. The Cloudflare Tunnel container is the only ingress; it connects outbound to Cloudflare and reaches the other services over the compose network.
+
+## Reasoning
+A bare `ports: []` does **not** remove the base file's mappings. Docker Compose *merges* sequences across overlay files, so an empty list is a no-op and the development loopback mappings survive into production. The first version of the overlay had exactly this bug, with a comment claiming the opposite; it was caught by inspecting `docker compose config` rather than by reading the file, which is the only way this class of error is findable.
+
+With no published ports, "the origin has no inbound listener" becomes a property of the topology rather than of a firewall rule someone has to remember to keep in place. That distinction matters on a self-hosted box that may later run unrelated applications (ADR-007).
+
+## Alternatives Considered
+Publishing to loopback only and relying on the host firewall — rejected; on a shared host any local process or user can still reach a loopback port, and the protection depends on configuration outside this repository. Binding the API to a Unix socket — rejected as unnecessary complexity once no port is published at all.
+
+## Consequences
+Local development and production now differ in a way that is easy to forget: `docker compose up` alone gives you reachable ports, and the overlay takes them away. The runbook shows a `docker compose config | grep ports` check for verifying it, and the reasoning is recorded at the call site so the next person does not "fix" `!reset` back to `[]`.
+
+## Reversal Cost
+Trivial.
+
+## Date
+2026-08-23
+
+---
+
+# ADR-015: The worker image installs CPU-only PyTorch
+
+## Status
+Accepted
+
+## Context
+The worker runs the self-hosted embedding model (ADR-005), which pulls PyTorch. The default PyPI wheel bundles CUDA libraries — roughly 2.5GB of them.
+
+## Decision
+Install torch from PyTorch's CPU index (`--index-url https://download.pytorch.org/whl/cpu`) before installing sentence-transformers, so the CPU build is already satisfied when the latter resolves its dependencies.
+
+## Reasoning
+The documented deployment target is a small self-hosted Ubuntu server with no GPU (ADR-007), so the CUDA libraries are dead weight that is downloaded, stored, and shipped on every rebuild for no benefit. The measured worker image is 2.18GB; with the default wheel it was on track to exceed 6GB, and the first build attempt in fact failed on a pip read timeout part-way through that download.
+
+## Alternatives Considered
+Accepting the default wheel — rejected on size and on build reliability. Running embeddings on a hosted API instead — that is ADR-005's rejected alternative and remains rejected: keeping evidence content on the firm's own server for the mechanical vectorisation step is the point.
+
+## Consequences
+If this is ever deployed on a GPU host, the index URL must change to get GPU acceleration. Noted in the Dockerfile at the install site.
+
+## Reversal Cost
+Trivial — one line.
+
+## Date
+2026-08-23

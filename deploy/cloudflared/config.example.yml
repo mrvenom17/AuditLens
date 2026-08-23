@@ -1,0 +1,45 @@
+# Cloudflare Tunnel ingress (09_DEPLOYMENT.md § Deployment Security).
+#
+# Only needed if you run the tunnel with a credentials file rather than a
+# dashboard-managed token. The compose overlay uses TUNNEL_TOKEN by default,
+# which carries its ingress rules from the Cloudflare dashboard and needs no
+# file at all — this exists for the locally-configured alternative.
+#
+# The tunnel connects *outbound* to Cloudflare. That is the whole point: the
+# origin never listens on a public interface, so "no direct unencrypted origin
+# exposure" is a property of the network topology rather than of a firewall
+# rule someone has to remember to keep in place.
+#
+# Copy to config.yml, fill in the tunnel id and hostname, and mount it:
+#     volumes:
+#       - ./cloudflared:/etc/cloudflared:ro
+
+tunnel: CHANGE_ME_TUNNEL_ID
+credentials-file: /etc/cloudflared/CHANGE_ME_TUNNEL_ID.json
+
+# Rules are matched top to bottom; the last must be a catch-all.
+ingress:
+  # The API. Listed before the frontend so /api/* is not swallowed by it.
+  - hostname: auditlens.CHANGE_ME.tld
+    path: ^/api/.*
+    service: http://api:8000
+    originRequest:
+      # Uploads are capped at 25MB (05_SECURITY.md §10.4); the timeout allows
+      # for a slow client on a large evidence file without holding a connection
+      # open indefinitely.
+      connectTimeout: 30s
+      # Evidence extraction is a background job, so no request should be long-
+      # lived. A generous but finite ceiling keeps a stuck request from pinning
+      # a connection.
+      noTLSVerify: false
+
+  # The frontend.
+  - hostname: auditlens.CHANGE_ME.tld
+    service: http://web:3000
+    originRequest:
+      connectTimeout: 10s
+
+  # Required catch-all. Anything not matched above is refused rather than
+  # forwarded — a tunnel that defaults to forwarding is a tunnel that will
+  # eventually forward something you did not mean to expose.
+  - service: http_status:404

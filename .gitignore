@@ -30,3 +30,8 @@ backend/data/
 *.swp
 .idea/
 .vscode/
+
+# Deployment artifacts — backups contain client audit data
+deploy/backups/
+deploy/cloudflared/config.yml
+deploy/cloudflared/*.json

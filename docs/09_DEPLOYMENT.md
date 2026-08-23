@@ -19,7 +19,24 @@
 | `CORS_ALLOWED_ORIGIN` | Frontend origin allowed for CORS | All | No | `https://auditlens.yourdomain.tld` |
 | `ENVIRONMENT` | local / production | All | No | `production` |
 
+Added during TASK-024, when the production stack was first actually run:
+
+| Variable | Purpose | Required In | Secret? | Example Format |
+|---|---|---|---|---|
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | Database container credentials. Must agree with `DATABASE_URL`. | Production | Yes (password) | `auditlens_app` |
+| `TUNNEL_TOKEN` | Cloudflare Tunnel token, from the Zero Trust dashboard. The tunnel is the only ingress. | Production | Yes | provider-specific token |
+| `LLM_MODEL` | Model identifier (ADR-009). Separated from the key so a model change is not a credential change. | All | No | `claude-sonnet-5` |
+| `EMBEDDING_DIMENSIONS` | Vector width, must match the model and the migrated column. | All | No | `384` |
+| `BACKUP_RETENTION_DAYS` / `BACKUP_INTERVAL_SECONDS` | Local `pg_dump` retention and cadence. | Production | No | `30` / `86400` |
+
 Never use real secrets in this table or in `.env.example` — placeholders only.
+
+Every variable is declared `${VAR:?...}` in the production overlay, so a missing
+one aborts `docker compose up` with a message naming it. The application then
+re-checks at startup (`Settings.validate_for_environment`) and refuses to serve
+on a development `SESSION_SECRET` or `DATABASE_URL`, or an `http://` CORS
+origin — a deployment that forgot one fails loudly rather than running
+misconfigured.
 
 ## Build Process
 

@@ -33,6 +33,10 @@ services:
     build:
       context: ../backend
       dockerfile: Dockerfile
+      # Explicit: without a target, Docker builds the *last* stage in the
+      # Dockerfile, which is `worker` — dragging torch into a container whose
+      # only job is running Alembic.
+      target: api
     command: ["alembic", "upgrade", "head"]
     env_file: ../backend/.env
     environment:
@@ -46,6 +50,7 @@ services:
     build:
       context: ../backend
       dockerfile: Dockerfile
+      target: api
     command:
       ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
     env_file: ../backend/.env

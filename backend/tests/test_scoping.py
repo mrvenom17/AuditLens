@@ -270,6 +270,85 @@ class TestScopeSuggestionDegradation:
         assert added.json()["source"] == "manual"
         assert added.json()["confirmed"] is False
 
+    def test_a_fully_manual_engagement_reaches_in_progress(
+        self,
+        api_client: TestClient,
+        db: DBSession,
+        make_user: Any,
+        make_engagement: Any,
+        corpus: None,
+    ) -> None:
+        """Regression, found by the TASK-024 end-to-end run rather than by any
+        unit test.
+
+        An engagement scoped entirely by hand — the documented path when the LLM
+        is unavailable — used to sit in `intake` forever, because only a
+        *successful* AI suggestion advanced it to `scoping`. Since `intake` has
+        no edge to `in_progress`, finalization then failed with
+        INVALID_STATUS_TRANSITION no matter how much work had been done. The
+        whole mandated fallback was a dead end, and every step of it returned
+        2xx right up to the last one.
+        """
+        set_llm_client(FakeLLM(raises=LLMTimeoutError("timed out")))
+        auditor = make_user(Role.auditor, password=PASSWORD)
+        engagement = make_engagement(auditor)
+        login(api_client, auditor)
+
+        api_client.post(f"/api/engagements/{engagement.id}/scope-suggestion")
+        db.refresh(engagement)
+        assert engagement.status == EngagementStatus.intake, "degraded run stays in intake"
+
+        added = api_client.post(
+            f"/api/engagements/{engagement.id}/scoped-requirements",
+            json={"clause_id": "1.2.1"},
+        ).json()
+        db.refresh(engagement)
+        assert engagement.status == EngagementStatus.scoping, "adding scope begins scoping"
+
+        api_client.patch(f"/api/scoped-requirements/{added['id']}", json={"confirmed": True})
+        db.refresh(engagement)
+        assert engagement.status == EngagementStatus.in_progress, (
+            "confirming scope must reach in_progress, or the engagement can never finalize"
+        )
+
+    def test_a_manually_scoped_engagement_can_be_finalized(
+        self,
+        api_client: TestClient,
+        db: DBSession,
+        make_user: Any,
+        make_engagement: Any,
+        corpus: None,
+    ) -> None:
+        """The end the previous test's path has to reach. Asserted separately
+        because "status is in_progress" is a proxy; "can actually be signed off"
+        is the property that matters."""
+        from app.models.engagement import EngagementAssignment
+
+        set_llm_client(FakeLLM(raises=LLMTimeoutError("timed out")))
+        auditor = make_user(Role.auditor, password=PASSWORD)
+        reviewer = make_user(Role.reviewer, password=PASSWORD)
+        engagement = make_engagement(auditor)
+        db.add(EngagementAssignment(engagement_id=engagement.id, user_id=reviewer.id))
+        db.flush()
+
+        login(api_client, auditor)
+        api_client.post(f"/api/engagements/{engagement.id}/scope-suggestion")
+        added = api_client.post(
+            f"/api/engagements/{engagement.id}/scoped-requirements",
+            json={"clause_id": "1.2.1"},
+        ).json()
+        api_client.patch(f"/api/scoped-requirements/{added['id']}", json={"confirmed": True})
+
+        login(api_client, reviewer)
+        api_client.patch(
+            f"/api/scoped-requirements/{added['id']}/gap",
+            json={"gap_acknowledged": True, "gap_note": "No evidence supplied in time."},
+        )
+        response = api_client.post(f"/api/engagements/{engagement.id}/finalize")
+
+        assert response.status_code == 200, response.text
+        assert response.json()["engagement_status"] == "finalized"
+
 
 class TestScopeSuggestionPreconditions:
     def test_missing_profile_fields_returns_409(

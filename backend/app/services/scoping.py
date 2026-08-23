@@ -283,6 +283,14 @@ class ScopingService:
                 code="ALREADY_SCOPED",
             )
 
+        # Adding a requirement means scoping has begun, whoever proposed it.
+        # Without this, an engagement scoped entirely by hand — the documented
+        # path when the LLM is unavailable — would sit in `intake` forever and
+        # could never be finalized, because `intake` has no edge to
+        # `in_progress`. Only a *successful* AI suggestion used to advance it.
+        if engagement.status == EngagementStatus.intake:
+            self._engagements.advance_status(engagement, EngagementStatus.scoping)
+
         return self._scoped.create(
             engagement_id=engagement_id,
             pci_requirement_id=matches[0].id,
@@ -305,8 +313,15 @@ class ScopingService:
         scoped.confirmed = confirmed
         self._db.flush()
 
-        if confirmed and engagement.status == EngagementStatus.scoping:
-            self._engagements.advance_status(engagement, EngagementStatus.in_progress)
+        if confirmed:
+            # Walk the documented lifecycle forward rather than adding a
+            # shortcut edge to the state machine. The `intake` step is reachable
+            # here for a requirement created before scoping was marked as begun;
+            # confirming one unambiguously means the engagement is past intake.
+            if engagement.status == EngagementStatus.intake:
+                self._engagements.advance_status(engagement, EngagementStatus.scoping)
+            if engagement.status == EngagementStatus.scoping:
+                self._engagements.advance_status(engagement, EngagementStatus.in_progress)
         return scoped
 
     def acknowledge_gap(

@@ -49,7 +49,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         tesseract-ocr \
         tesseract-ocr-eng \
     && rm -rf /var/lib/apt/lists/*
-RUN pip install --no-cache-dir "sentence-transformers>=3.3"
+
+# Torch from the CPU index, before sentence-transformers pulls the default.
+# The default wheel bundles CUDA libraries — roughly 2.5GB of them — which are
+# dead weight on the documented deployment target (a small self-hosted Ubuntu
+# box with no GPU, ADR-007). The CPU build is a fraction of the size and is
+# what actually runs.
+#
+# The generous timeout and retries are not superstition: these are large wheels
+# over a single connection, and a read timeout part-way through fails the whole
+# image build.
+RUN pip install --no-cache-dir --timeout 300 --retries 5 \
+        --index-url https://download.pytorch.org/whl/cpu \
+        torch \
+    && pip install --no-cache-dir --timeout 300 --retries 5 \
+        "sentence-transformers>=3.3"
 ENV HF_HOME=/models
 RUN mkdir -p /models && chown -R auditlens:auditlens /models
 USER auditlens
