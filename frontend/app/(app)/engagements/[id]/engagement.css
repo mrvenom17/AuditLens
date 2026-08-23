@@ -235,3 +235,103 @@
 .doc-upload .hint {
   margin-top: 0.5rem;
 }
+
+/* --- Review queue ----------------------------------------------------------- */
+
+.queue {
+  display: flex;
+  flex-direction: column;
+}
+
+.finding {
+  padding: 0.9rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.finding:last-child {
+  border-bottom: none;
+}
+
+/* A decided finding recedes so the outstanding ones carry the eye, without
+   disappearing — it is still the audit record. */
+.finding-decided {
+  background: color-mix(in srgb, var(--surface-sunken) 40%, transparent);
+}
+
+.finding-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.6rem;
+}
+
+.finding-clause {
+  font-size: 0.9375rem;
+}
+
+.finding-machine {
+  margin-bottom: 0.6rem;
+}
+
+.finding-machine-status strong {
+  font-weight: 600;
+}
+
+.finding-citations {
+  margin-top: 0.4rem;
+  color: var(--machine);
+}
+
+.finding-determination {
+  margin-bottom: 0.6rem;
+}
+
+.finding-history {
+  margin: 0 0 0.6rem;
+  padding: 0.6rem 0.85rem;
+  list-style: none;
+  background: var(--surface-sunken);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.finding-error {
+  margin-bottom: 0.6rem;
+}
+
+.finding-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.finding-override-hint {
+  margin-left: 0.2rem;
+}
+
+.finding-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.75rem;
+  background: var(--surface-sunken);
+  border-radius: var(--radius-sm);
+}
+
+.finding-form textarea {
+  min-height: 3.5rem;
+}
+
+.finding-form select {
+  width: auto;
+  min-width: 11rem;
+}
+
+.finding-locked {
+  margin-top: 0.5rem;
+}

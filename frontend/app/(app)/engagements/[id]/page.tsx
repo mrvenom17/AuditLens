@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { EngagementRail } from "@/components/EngagementRail";
 import { EvidencePanel } from "@/components/EvidencePanel";
 import { EvidenceRequestsPanel } from "@/components/EvidenceRequestsPanel";
+import { ReviewQueue } from "@/components/ReviewQueue";
 import { ScopePanel } from "@/components/ScopePanel";
 import { ApiError } from "@/lib/api";
 import { serverFetch } from "@/lib/server-api";
@@ -13,6 +14,7 @@ import {
   type EngagementDetail,
   type EvidenceDocumentSummary,
   type EvidenceRequest,
+  type Finding,
   type ScopedRequirement,
 } from "@/types/api";
 
@@ -41,10 +43,11 @@ export default async function EngagementPage({
     throw error;
   }
 
-  const [scope, requests, documents, user] = await Promise.all([
+  const [scope, requests, documents, findings, user] = await Promise.all([
     serverFetch<ScopedRequirement[]>(`/api/engagements/${id}/scoped-requirements`),
     serverFetch<EvidenceRequest[]>(`/api/engagements/${id}/evidence-requests`),
     serverFetch<EvidenceDocumentSummary[]>(`/api/engagements/${id}/evidence-documents`),
+    serverFetch<Finding[]>(`/api/engagements/${id}/findings`),
     serverFetch<CurrentUser>("/api/auth/me"),
   ]);
 
@@ -93,6 +96,14 @@ export default async function EngagementPage({
             // server enforces this; hiding the control just avoids offering an
             // action that would be refused.
             canAcknowledgeGaps={user.role === "reviewer"}
+            readOnly={finalized}
+          />
+
+          <ReviewQueue
+            findings={findings}
+            // Only a Reviewer may change a finding someone already ruled on
+            // (01_REQUIREMENTS.md § Finding Review, Authorization Rules).
+            canOverride={user.role === "reviewer"}
             readOnly={finalized}
           />
 
