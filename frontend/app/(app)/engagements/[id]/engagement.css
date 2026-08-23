@@ -1,0 +1,94 @@
+/* Engagement workspace. Rail carries context and progress; the main column is
+ * the work surface. The rail is deliberately narrow — it answers "how much is
+ * left", not "what do I do next". */
+
+.engagement-layout {
+  display: grid;
+  grid-template-columns: var(--rail) minmax(0, 1fr);
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  position: sticky;
+  top: 4.25rem;
+}
+
+.rail .panel-head {
+  padding: 0.6rem 0.85rem;
+}
+
+.rail .panel-body {
+  padding: 0.85rem;
+}
+
+.progress {
+  height: 5px;
+  border-radius: 999px;
+  background: var(--surface-sunken);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+.rail-progress-label {
+  margin-top: 0.5rem;
+}
+
+.rail-blocking {
+  margin-top: 0.25rem;
+  color: var(--attention);
+  font-weight: 500;
+}
+
+.rail-stats {
+  margin: 0;
+  padding: 0.2rem 0;
+}
+
+.rail-stat {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.32rem 0.85rem;
+}
+
+.rail-stat dt {
+  margin: 0;
+}
+
+.rail-stat-value {
+  margin: 0;
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+.finalized-banner {
+  margin-bottom: 1.25rem;
+}
+
+/* Rationale nested inside a scope table cell. Tighter than a standalone block
+ * so the table stays scannable. */
+.scope-rationale {
+  margin-top: 0.45rem;
+}
+
+
+@media (max-width: 62rem) {
+  .engagement-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .rail {
+    position: static;
+  }
+}

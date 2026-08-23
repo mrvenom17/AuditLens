@@ -1,14 +1,28 @@
+import Link from "next/link";
+
+import { NewEngagementForm } from "@/components/NewEngagementForm";
 import { serverFetch } from "@/lib/server-api";
 import {
   ENGAGEMENT_STATUS_LABELS,
+  type CurrentUser,
   type EngagementSummary,
   type Page,
 } from "@/types/api";
 
+import "./engagements.css";
+
 export const metadata = { title: "Engagements · AuditLens" };
 
 export default async function EngagementsPage() {
-  const page = await serverFetch<Page<EngagementSummary>>("/api/engagements");
+  const [page, user] = await Promise.all([
+    serverFetch<Page<EngagementSummary>>("/api/engagements"),
+    serverFetch<CurrentUser>("/api/auth/me"),
+  ]);
+
+  // 04_API_CONTRACT.md restricts creation to auditor and reviewer. Hiding the
+  // control for an Admin is a courtesy — the endpoint refuses them regardless,
+  // and that refusal is the actual boundary (02_ARCHITECTURE.md §7.4).
+  const canCreate = user.role === "auditor" || user.role === "reviewer";
 
   return (
     <>
@@ -16,20 +30,26 @@ export default async function EngagementsPage() {
         <div>
           <h1>Engagements</h1>
           <p className="page-sub">
-            {page.total === 0
-              ? "No engagements yet"
-              : `${page.total} engagement${page.total === 1 ? "" : "s"}`}
+            {user.role === "auditor"
+              ? "Engagements you are assigned to"
+              : "All engagements at the firm"}
           </p>
         </div>
+        {canCreate && <NewEngagementForm />}
       </div>
 
       <div className="panel">
         {page.items.length === 0 ? (
           <div className="empty">
-            {/* An empty screen is an invitation to act, not a shrug. */}
-            <p>No engagements are assigned to you.</p>
+            <p>
+              {user.role === "auditor"
+                ? "No engagements are assigned to you."
+                : "No engagements yet."}
+            </p>
             <p className="small" style={{ marginTop: "0.4rem" }}>
-              Create one to begin scoping a client against PCI DSS v4.0.1.
+              {canCreate
+                ? "Create one to begin scoping a client against PCI DSS v4.0.1."
+                : "A Reviewer can assign you to an engagement."}
             </p>
           </div>
         ) : (
@@ -37,16 +57,18 @@ export default async function EngagementsPage() {
             <thead>
               <tr>
                 <th>Client</th>
-                <th>Type</th>
-                <th>Status</th>
-                <th>Opened</th>
+                <th style={{ width: "12rem" }}>Type</th>
+                <th style={{ width: "8rem" }}>Status</th>
+                <th style={{ width: "7rem" }}>Opened</th>
               </tr>
             </thead>
             <tbody>
               {page.items.map((engagement) => (
                 <tr key={engagement.id}>
                   <td>
-                    <span style={{ fontWeight: 500 }}>{engagement.client_name}</span>
+                    <Link href={`/engagements/${engagement.id}`} className="row-link">
+                      {engagement.client_name}
+                    </Link>
                   </td>
                   <td className="small muted">
                     {engagement.entity_type === "merchant"
@@ -54,13 +76,17 @@ export default async function EngagementsPage() {
                       : "Service provider"}
                   </td>
                   <td>
-                    <span className="pill pill-neutral">
+                    <span
+                      className={
+                        engagement.status === "finalized"
+                          ? "pill pill-satisfied"
+                          : "pill pill-neutral"
+                      }
+                    >
                       {ENGAGEMENT_STATUS_LABELS[engagement.status]}
                     </span>
                   </td>
-                  <td className="small muted mono">
-                    {engagement.created_at.slice(0, 10)}
-                  </td>
+                  <td className="small muted mono">{engagement.created_at.slice(0, 10)}</td>
                 </tr>
               ))}
             </tbody>
