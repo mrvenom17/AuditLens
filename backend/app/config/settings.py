@@ -14,6 +14,12 @@ from typing import Literal
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Development-only defaults, named as constants so the production validation can
+# compare against them by identity rather than by a duplicated literal that
+# could drift out of sync with the value it is meant to reject.
+DEV_DATABASE_URL = "postgresql+psycopg://auditlens:auditlens@localhost:5432/auditlens"
+DEV_SESSION_SECRET = "dev-only-insecure-change-me"  # noqa: S105 — a rejected placeholder
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -24,8 +30,13 @@ class Settings(BaseSettings):
 
     # --- Core -------------------------------------------------------------
     ENVIRONMENT: Literal["local", "test", "production"] = "local"
-    DATABASE_URL: str = "postgresql+psycopg://auditlens:auditlens@localhost:5432/auditlens"
-    SESSION_SECRET: SecretStr = SecretStr("dev-only-insecure-change-me")
+    # The development default exists so that tooling (alembic, tests, the corpus
+    # loader) can import settings without a full environment. It is rejected in
+    # production by `validate_for_environment` — a deployment that forgot to set
+    # DATABASE_URL must fail loudly rather than quietly connect somewhere else
+    # with a guessable credential.
+    DATABASE_URL: str = DEV_DATABASE_URL
+    SESSION_SECRET: SecretStr = SecretStr(DEV_SESSION_SECRET)
 
     # --- External services -------------------------------------------------
     LLM_API_KEY: SecretStr = SecretStr("")
@@ -78,8 +89,10 @@ class Settings(BaseSettings):
         if not self.is_production:
             return
         problems: list[str] = []
-        if self.SESSION_SECRET.get_secret_value() == "dev-only-insecure-change-me":
+        if self.SESSION_SECRET.get_secret_value() == DEV_SESSION_SECRET:
             problems.append("SESSION_SECRET is still the development default")
+        if self.DATABASE_URL == DEV_DATABASE_URL:
+            problems.append("DATABASE_URL is still the development default")
         if len(self.SESSION_SECRET.get_secret_value()) < 32:
             problems.append("SESSION_SECRET must be at least 32 bytes (09_DEPLOYMENT.md)")
         if not self.LLM_API_KEY.get_secret_value():
