@@ -73,8 +73,20 @@ class FinalizationService:
 
         Exposed separately from `finalize` so the UI can show the Reviewer their
         remaining work without attempting the action and reading it out of a 409.
+
+        The access check is explicit and comes first. Relying on the ownership
+        filter inside `list_for_engagement` is not sufficient here: for a caller
+        with no access it returns an empty set, which this method would read as
+        "nothing is blocking" and report as `ready: true`. An authorization
+        failure that presents as a confident answer is worse than one that
+        presents as an error, so the denial has to be raised rather than
+        inferred from an empty result.
         """
+        self._engagements.get(engagement_id, actor)
+
         confirmed = self._scoped.list_for_engagement(engagement_id, actor, confirmed_only=True)
+        # These two are keyed on engagement id alone, which is safe only because
+        # access to this engagement has just been asserted above.
         approved_by_requirement = {
             f.scoped_requirement_id for f in self._findings.approved_for_engagement(engagement_id)
         }
