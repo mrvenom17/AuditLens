@@ -92,3 +92,31 @@
     position: static;
   }
 }
+
+/* --- Scope panel ------------------------------------------------------------ */
+
+.scope-messages {
+  padding: 0.85rem 1rem 0;
+}
+
+.scope-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.scope-add {
+  padding: 0.85rem 1rem;
+  border-top: 1px solid var(--border);
+  background: var(--surface-sunken);
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+
+.scope-add-input {
+  max-width: 8rem;
+}
+
+.panel-head p.tiny {
+  margin-top: 0.1rem;
+}

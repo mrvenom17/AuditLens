@@ -2,10 +2,12 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { EngagementRail } from "@/components/EngagementRail";
+import { ScopePanel } from "@/components/ScopePanel";
 import { ApiError } from "@/lib/api";
 import { serverFetch } from "@/lib/server-api";
 import {
   ENGAGEMENT_STATUS_LABELS,
+  type CurrentUser,
   type EngagementDetail,
   type ScopedRequirement,
 } from "@/types/api";
@@ -35,10 +37,12 @@ export default async function EngagementPage({
     throw error;
   }
 
-  const scope = await serverFetch<ScopedRequirement[]>(
-    `/api/engagements/${id}/scoped-requirements`,
-  );
-  const confirmed = scope.filter((s) => s.confirmed);
+  const [scope, user] = await Promise.all([
+    serverFetch<ScopedRequirement[]>(`/api/engagements/${id}/scoped-requirements`),
+    serverFetch<CurrentUser>("/api/auth/me"),
+  ]);
+
+  const finalized = engagement.status === "finalized";
 
   return (
     <>
@@ -46,7 +50,7 @@ export default async function EngagementPage({
         <div>
           <div className="page-title">
             <h1>{engagement.client_name}</h1>
-            <span className={`pill ${statusPill(engagement.status)}`}>
+            <span className={`pill ${finalized ? "pill-satisfied" : "pill-neutral"}`}>
               {ENGAGEMENT_STATUS_LABELS[engagement.status]}
             </span>
           </div>
@@ -63,7 +67,7 @@ export default async function EngagementPage({
         </Link>
       </div>
 
-      {engagement.status === "finalized" && (
+      {finalized && (
         <div className="note note-attention finalized-banner">
           This engagement was finalized and is now read only. Findings and evidence
           cannot be changed; a correction requires a new, explicitly labelled record.
@@ -74,82 +78,18 @@ export default async function EngagementPage({
         <EngagementRail engagement={engagement} />
 
         <div className="stack">
-          <section className="panel">
-            <div className="panel-head">
-              <h2>Scope</h2>
-              <span className="small muted">
-                {confirmed.length} of {scope.length} confirmed
-              </span>
-            </div>
-
-            {scope.length === 0 ? (
-              <div className="empty">
-                <p>No requirements are in scope yet.</p>
-                <p className="small" style={{ marginTop: "0.4rem" }}>
-                  Suggest a scope from the client profile, or add clauses by hand.
-                </p>
-              </div>
-            ) : (
-              <table>
-                <thead>
-                  <tr>
-                    <th style={{ width: "5.5rem" }}>Clause</th>
-                    <th>Requirement</th>
-                    <th style={{ width: "7rem" }}>Source</th>
-                    <th style={{ width: "7rem" }}>State</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {scope.map((row) => (
-                    <tr key={row.id}>
-                      <td className="clause">{row.clause_id}</td>
-                      <td>
-                        <div>{row.title}</div>
-                        {row.rationale && (
-                          // Rationale on an ai_suggested row is machine-authored,
-                          // so it carries the reserved provenance treatment. On a
-                          // manual row it is the auditor's own note and does not.
-                          <div
-                            className={
-                              row.source === "ai_suggested"
-                                ? "machine scope-rationale"
-                                : "note scope-rationale"
-                            }
-                          >
-                            {row.source === "ai_suggested" && (
-                              <div className="machine-label">AI suggested</div>
-                            )}
-                            <p className="small">{row.rationale}</p>
-                          </div>
-                        )}
-                      </td>
-                      <td className="small muted">
-                        {row.source === "ai_suggested" ? "AI" : "Auditor"}
-                      </td>
-                      <td>
-                        {row.confirmed ? (
-                          <span className="pill pill-satisfied">Confirmed</span>
-                        ) : (
-                          <span className="pill pill-neutral">Proposed</span>
-                        )}
-                        {row.gap_acknowledged && (
-                          <div style={{ marginTop: "0.3rem" }}>
-                            <span className="pill pill-attention">Gap accepted</span>
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </section>
+          <ScopePanel
+            engagementId={engagement.id}
+            scope={scope}
+            // Accepting a gap permits finalizing without evidence, so it carries
+            // finalization-level authority and is Reviewer-only (ADR-012). The
+            // server enforces this; hiding the control just avoids offering an
+            // action that would be refused.
+            canAcknowledgeGaps={user.role === "reviewer"}
+            readOnly={finalized}
+          />
         </div>
       </div>
     </>
   );
-}
-
-function statusPill(status: EngagementDetail["status"]): string {
-  return status === "finalized" ? "pill-satisfied" : "pill-neutral";
 }
