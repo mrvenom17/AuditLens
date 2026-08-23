@@ -2,6 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { EngagementRail } from "@/components/EngagementRail";
+import { EvidencePanel } from "@/components/EvidencePanel";
+import { EvidenceRequestsPanel } from "@/components/EvidenceRequestsPanel";
 import { ScopePanel } from "@/components/ScopePanel";
 import { ApiError } from "@/lib/api";
 import { serverFetch } from "@/lib/server-api";
@@ -9,6 +11,8 @@ import {
   ENGAGEMENT_STATUS_LABELS,
   type CurrentUser,
   type EngagementDetail,
+  type EvidenceDocumentSummary,
+  type EvidenceRequest,
   type ScopedRequirement,
 } from "@/types/api";
 
@@ -37,12 +41,15 @@ export default async function EngagementPage({
     throw error;
   }
 
-  const [scope, user] = await Promise.all([
+  const [scope, requests, documents, user] = await Promise.all([
     serverFetch<ScopedRequirement[]>(`/api/engagements/${id}/scoped-requirements`),
+    serverFetch<EvidenceRequest[]>(`/api/engagements/${id}/evidence-requests`),
+    serverFetch<EvidenceDocumentSummary[]>(`/api/engagements/${id}/evidence-documents`),
     serverFetch<CurrentUser>("/api/auth/me"),
   ]);
 
   const finalized = engagement.status === "finalized";
+  const hasConfirmedScope = scope.some((s) => s.confirmed);
 
   return (
     <>
@@ -86,6 +93,20 @@ export default async function EngagementPage({
             // server enforces this; hiding the control just avoids offering an
             // action that would be refused.
             canAcknowledgeGaps={user.role === "reviewer"}
+            readOnly={finalized}
+          />
+
+          <EvidenceRequestsPanel
+            engagementId={engagement.id}
+            requests={requests}
+            hasConfirmedScope={hasConfirmedScope}
+            readOnly={finalized}
+          />
+
+          <EvidencePanel
+            engagementId={engagement.id}
+            documents={documents}
+            requests={requests}
             readOnly={finalized}
           />
         </div>

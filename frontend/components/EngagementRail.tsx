@@ -35,7 +35,9 @@ export function EngagementRail({ engagement }: { engagement: EngagementDetail })
           <p className="small muted rail-progress-label">
             {c.findings_total === 0
               ? "No findings yet"
-              : `${reviewed} of ${c.findings_total} findings reviewed`}
+              : `${reviewed} of ${c.findings_total} ${
+                  c.findings_total === 1 ? "finding" : "findings"
+                } reviewed`}
           </p>
 
           {c.findings_draft > 0 && (
@@ -48,9 +50,9 @@ export function EngagementRail({ engagement }: { engagement: EngagementDetail })
 
       {c.findings_needing_manual_review > 0 && (
         <div className="note note-attention">
-          <strong>{c.findings_needing_manual_review}</strong> finding
-          {c.findings_needing_manual_review === 1 ? "" : "s"} need a closer look — the
-          AI was unsure or unavailable.
+          <strong>{c.findings_needing_manual_review}</strong>{" "}
+          {c.findings_needing_manual_review === 1 ? "finding needs" : "findings need"} a
+          closer look — the AI was unsure or unavailable.
         </div>
       )}
 

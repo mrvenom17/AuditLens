@@ -120,3 +120,118 @@
 .panel-head p.tiny {
   margin-top: 0.1rem;
 }
+
+/* --- Evidence requests ------------------------------------------------------ */
+
+.request-list,
+.doc-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.request {
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.request:last-child {
+  border-bottom: none;
+}
+
+.request-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.35rem;
+}
+
+.request-text {
+  color: var(--ink);
+}
+
+.request-actions {
+  display: flex;
+  gap: 0.3rem;
+  margin-top: 0.45rem;
+}
+
+.request-edit {
+  margin-top: 0.4rem;
+}
+
+.request-edit textarea {
+  margin-bottom: 0.45rem;
+  min-height: 4.5rem;
+}
+
+/* --- Evidence documents ----------------------------------------------------- */
+
+.doc {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.8rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.doc:last-child {
+  border-bottom: none;
+}
+
+.doc-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.doc-name {
+  font-weight: 500;
+  color: var(--ink);
+  text-decoration: none;
+  word-break: break-word;
+}
+
+.doc-name:hover {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.doc-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  margin-top: 0.15rem;
+}
+
+.doc-note {
+  margin-top: 0.5rem;
+}
+
+.doc-status {
+  flex-shrink: 0;
+}
+
+.doc-upload {
+  padding: 0.85rem 1rem;
+  border-top: 1px solid var(--border);
+  background: var(--surface-sunken);
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+
+.doc-upload input[type="file"] {
+  padding: 0.35rem;
+  background: var(--surface);
+}
+
+.doc-upload select {
+  width: auto;
+  min-width: 9rem;
+}
+
+.doc-upload .hint {
+  margin-top: 0.5rem;
+}
