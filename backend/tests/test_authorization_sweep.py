@@ -126,7 +126,22 @@ NON_SCOPED_OPERATIONS: dict[tuple[str, str], str] = {
     ("GET", "/api/auth/me"): "returns the caller's own identity",
     ("GET", "/api/engagements"): "list — scoped by filtering, covered separately",
     ("POST", "/api/engagements"): "creates a new engagement; no existing resource",
+    # Firm-wide, not engagement-owned (03_DATA_MODEL.md → ClientProfileDocument).
+    ("POST", "/api/client-profile-documents"): "firm-held document, no engagement",
+    # Admin-gated rather than engagement-scoped. Covered by TestAdminRoutesAreRoleGated
+    # below and exhaustively in test_admin.py.
+    ("GET", "/api/admin/users"): "admin role gate",
+    ("POST", "/api/admin/users"): "admin role gate",
+    ("PATCH", "/api/admin/users/{user_id}"): "admin role gate",
 }
+
+# Operations behind the admin role gate. Kept separate from the engagement
+# sweep because their boundary is role, not assignment.
+ADMIN_ONLY: tuple[tuple[str, str], ...] = (
+    ("GET", "/api/admin/users"),
+    ("POST", "/api/admin/users"),
+    ("PATCH", "/api/admin/users/{user_id}"),
+)
 
 
 @pytest.fixture
@@ -537,22 +552,115 @@ class TestRoleGates:
         assert response.status_code == 403
 
 
+class TestAdminRoutesAreRoleGated:
+    """The admin surface is the only place `role` is ever set
+    (05_SECURITY.md §10.3), so every non-admin must be refused on every one."""
+
+    @pytest.mark.parametrize(("method", "path"), ADMIN_ONLY, ids=lambda v: str(v))
+    @pytest.mark.parametrize("role", [Role.auditor, Role.reviewer])
+    def test_non_admin_roles_are_refused(
+        self, api_client: TestClient, make_user: Any, method: str, path: str, role: Role
+    ) -> None:
+        user = make_user(role, password=PASSWORD)
+        login(api_client, user)
+
+        url = path.replace("{user_id}", str(user.id))
+        response = api_client.request(
+            method,
+            url,
+            json={
+                "email": "x@testfirm.example",
+                "name": "X",
+                "role": "admin",
+                "password": "a-sufficiently-long-password",
+                "is_active": False,
+            },
+        )
+
+        assert response.status_code == 403
+
+    def test_a_reviewer_cannot_promote_themselves_to_admin(
+        self, api_client: TestClient, db: DBSession, make_user: Any
+    ) -> None:
+        """The escalation this gate exists to prevent, stated as the attack
+        rather than as the rule."""
+        reviewer = make_user(Role.reviewer, password=PASSWORD)
+        login(api_client, reviewer)
+
+        api_client.patch(f"/api/admin/users/{reviewer.id}", json={"role": "admin"})
+
+        db.refresh(reviewer)
+        assert reviewer.role == Role.reviewer
+
+    def test_an_auditor_cannot_create_an_admin_account(
+        self, api_client: TestClient, db: DBSession, make_user: Any
+    ) -> None:
+        from sqlalchemy import func, select
+
+        from app.models.user import User
+
+        auditor = make_user(Role.auditor, password=PASSWORD)
+        login(api_client, auditor)
+        before = db.scalar(select(func.count()).select_from(User))
+
+        api_client.post(
+            "/api/admin/users",
+            json={
+                "email": "backdoor@testfirm.example",
+                "name": "Backdoor",
+                "role": "admin",
+                "password": "a-sufficiently-long-password",
+            },
+        )
+
+        assert db.scalar(select(func.count()).select_from(User)) == before
+
+
 class TestPrivilegeEscalationSurface:
     """05_SECURITY.md §10.3: "role is set only by Admin action on the User
     record, never accepted as a client-supplied field on any other endpoint."""
 
-    def test_no_endpoint_accepts_a_role_field(self) -> None:
-        """Asserted against the generated schema, so it holds for every request
-        body the application will accept rather than for the ones tested."""
+    def test_only_the_admin_schemas_accept_a_role_field(self) -> None:
+        """05_SECURITY.md §10.3: "role is set only by Admin action on the User
+        record, never accepted as a client-supplied field on any other
+        endpoint."
+
+        Asserted against the generated schema, so it holds for every request
+        body the application will accept rather than for the ones tested. The
+        allow-list is exact rather than a prefix match: a new schema called
+        `AdminSomethingCreate` should have to be added here deliberately.
+        """
         schemas = app.openapi()["components"]["schemas"]
 
-        offenders = [
-            name
-            for name, schema in schemas.items()
-            if "role" in (schema.get("properties") or {})
-            and not name.startswith(("CurrentUser", "Login", "UserSummary"))
-        ]
-        assert not offenders, f"These request schemas accept a role field: {offenders}"
+        # Response schemas may report a role; only inputs are constrained.
+        response_schemas = {"CurrentUserResponse", "LoginResponse", "UserSummary"}
+        # The one sanctioned input path, reachable only behind RequireAdmin.
+        admin_input_schemas = {"AdminUserCreate", "AdminUserUpdate"}
+
+        carrying_role = {
+            name for name, schema in schemas.items() if "role" in (schema.get("properties") or {})
+        }
+
+        offenders = carrying_role - response_schemas - admin_input_schemas
+        assert not offenders, f"These schemas accept a client-supplied role: {offenders}"
+
+    def test_the_role_accepting_schemas_are_reachable_only_behind_the_admin_gate(
+        self,
+    ) -> None:
+        """The allow-list above is only safe if those schemas are in fact
+        admin-gated. This checks the routes that reference them."""
+        spec = app.openapi()
+        admin_input_schemas = {"AdminUserCreate", "AdminUserUpdate"}
+
+        for path, operations in spec["paths"].items():
+            for method, operation in operations.items():
+                body = operation.get("requestBody", {})
+                referenced = str(body)
+                if any(name in referenced for name in admin_input_schemas):
+                    assert path.startswith("/api/admin/"), (
+                        f"{method.upper()} {path} accepts a role-bearing schema but is "
+                        f"not under /api/admin/"
+                    )
 
     def test_no_request_schema_accepts_reviewed_by_or_ownership(self) -> None:
         """The fields that would let a caller assert who reviewed something, or
