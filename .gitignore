@@ -35,3 +35,8 @@ backend/data/
 deploy/backups/
 deploy/cloudflared/config.yml
 deploy/cloudflared/*.json
+
+# Browser-automation artifacts from UI verification
+.playwright-mcp/
+*.png
+!frontend/public/**/*.png

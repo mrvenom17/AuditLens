@@ -1,0 +1,52 @@
+/* The login gate. Deliberately the one calm screen in the product: it is the
+ * only page with nothing to scan and nothing to decide. */
+
+.login {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 2rem 1rem;
+  /* A single quiet gradient toward the authority hue, so the entry point is
+   * recognisably part of the same system as the sign-off action without
+   * borrowing the machine hue for decoration. */
+  background:
+    radial-gradient(
+      ellipse 70% 55% at 50% 0%,
+      color-mix(in srgb, var(--accent) 20%, transparent),
+      transparent 68%
+    ),
+    var(--ground);
+}
+
+.login-card {
+  width: 100%;
+  max-width: 22rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lift);
+  padding: 1.75rem;
+}
+
+.login-head {
+  margin-bottom: 1.5rem;
+}
+
+.login-head h1 {
+  font-size: 1.5rem;
+  letter-spacing: -0.02em;
+  margin-bottom: 0.15rem;
+}
+
+.login-submit {
+  width: 100%;
+  margin-top: 0.25rem;
+  padding: 0.55rem 1rem;
+}
+
+.login-foot {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+  text-align: center;
+}

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="AuditLens">
+  <!-- A lens ring with a single mark inside it: the tool looks at evidence, and
+       a human makes the mark. Legible down to 16px, which rules out anything
+       more literal. -->
+  <rect width="32" height="32" rx="7" fill="#0F4C4A"/>
+  <circle cx="16" cy="16" r="8.5" fill="none" stroke="#FFFFFF" stroke-width="2.25" opacity="0.9"/>
+  <path d="M12.4 16.3l2.6 2.6 5-5.4" fill="none" stroke="#FFFFFF" stroke-width="2.25"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
