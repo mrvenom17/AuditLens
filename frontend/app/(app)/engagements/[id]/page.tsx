@@ -4,17 +4,20 @@ import { notFound } from "next/navigation";
 import { EngagementRail } from "@/components/EngagementRail";
 import { EvidencePanel } from "@/components/EvidencePanel";
 import { EvidenceRequestsPanel } from "@/components/EvidenceRequestsPanel";
+import { FinalizePanel } from "@/components/FinalizePanel";
 import { ReviewQueue } from "@/components/ReviewQueue";
 import { ScopePanel } from "@/components/ScopePanel";
 import { ApiError } from "@/lib/api";
-import { serverFetch } from "@/lib/server-api";
+import { serverFetch, serverFetchOrNull } from "@/lib/server-api";
 import {
   ENGAGEMENT_STATUS_LABELS,
   type CurrentUser,
   type EngagementDetail,
   type EvidenceDocumentSummary,
   type EvidenceRequest,
+  type FinalizationReadiness,
   type Finding,
+  type Report,
   type ScopedRequirement,
 } from "@/types/api";
 
@@ -43,13 +46,20 @@ export default async function EngagementPage({
     throw error;
   }
 
-  const [scope, requests, documents, findings, user] = await Promise.all([
-    serverFetch<ScopedRequirement[]>(`/api/engagements/${id}/scoped-requirements`),
-    serverFetch<EvidenceRequest[]>(`/api/engagements/${id}/evidence-requests`),
-    serverFetch<EvidenceDocumentSummary[]>(`/api/engagements/${id}/evidence-documents`),
-    serverFetch<Finding[]>(`/api/engagements/${id}/findings`),
-    serverFetch<CurrentUser>("/api/auth/me"),
-  ]);
+  const [scope, requests, documents, findings, readiness, report, user] =
+    await Promise.all([
+      serverFetch<ScopedRequirement[]>(`/api/engagements/${id}/scoped-requirements`),
+      serverFetch<EvidenceRequest[]>(`/api/engagements/${id}/evidence-requests`),
+      serverFetch<EvidenceDocumentSummary[]>(`/api/engagements/${id}/evidence-documents`),
+      serverFetch<Finding[]>(`/api/engagements/${id}/findings`),
+      serverFetch<FinalizationReadiness>(
+        `/api/engagements/${id}/finalization-readiness`,
+      ),
+      // 404 until the engagement is finalized, which is the normal case rather
+      // than a fault — so a missing report is null, not an error.
+      serverFetchOrNull<Report>(`/api/engagements/${id}/report`),
+      serverFetch<CurrentUser>("/api/auth/me"),
+    ]);
 
   const finalized = engagement.status === "finalized";
   const hasConfirmedScope = scope.some((s) => s.confirmed);
@@ -105,6 +115,16 @@ export default async function EngagementPage({
             // (01_REQUIREMENTS.md § Finding Review, Authorization Rules).
             canOverride={user.role === "reviewer"}
             readOnly={finalized}
+          />
+
+          <FinalizePanel
+            engagement={engagement}
+            readiness={readiness}
+            report={report}
+            // 00_PRODUCT.md §5.3: sign-off authority is a role property, not an
+            // escalation path — an Admin is excluded too. The server enforces
+            // this regardless of what is rendered.
+            canFinalize={user.role === "reviewer"}
           />
 
           <EvidenceRequestsPanel

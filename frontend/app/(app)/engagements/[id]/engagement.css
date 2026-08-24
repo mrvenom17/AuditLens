@@ -335,3 +335,79 @@
 .finding-locked {
   margin-top: 0.5rem;
 }
+
+/* --- Sign off --------------------------------------------------------------- */
+
+/* The terminal action gets the authority hue on its top edge — the only panel
+   in the product that does, because it is the only one that ends something. */
+.finalize {
+  border-top: 2px solid var(--accent);
+}
+
+.note-ready {
+  background: var(--accent-wash);
+  border-color: color-mix(in srgb, var(--accent) 22%, transparent);
+  border-left-color: var(--accent);
+  color: var(--accent);
+}
+
+.blocker-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.blocker {
+  display: flex;
+  align-items: baseline;
+  gap: 0.7rem;
+  padding: 0.45rem 0.7rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.blocker:last-child {
+  border-bottom: none;
+}
+
+.finalize-confirm {
+  padding: 0.85rem;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--accent-wash);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.finalize-summary {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.report-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+  gap: 0.6rem;
+  margin: 0;
+}
+
+.report-stat {
+  padding: 0.6rem 0.7rem;
+  background: var(--surface-sunken);
+  border-radius: var(--radius-sm);
+}
+
+.report-stat dt {
+  margin: 0;
+}
+
+.report-stat-value {
+  margin: 0.1rem 0 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+}

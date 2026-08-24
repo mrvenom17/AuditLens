@@ -102,11 +102,15 @@ class FinalizationService:
             if scoped.id in drafts_by_requirement:
                 # An unreviewed draft blocks regardless of anything else: the
                 # whole point of the product is that a human saw every item.
+                count = drafts_by_requirement[scoped.id]
                 blockers.append(
                     BlockingItem(
                         scoped.id,
                         clause_id,
-                        f"{drafts_by_requirement[scoped.id]} finding(s) still awaiting review",
+                        # Shown verbatim to a Reviewer deciding whether to sign
+                        # off, so it agrees in number rather than reading
+                        # "1 finding(s)".
+                        f"{count} finding{'' if count == 1 else 's'} still awaiting review",
                     )
                 )
             elif scoped.id not in approved_by_requirement and not scoped.gap_acknowledged:

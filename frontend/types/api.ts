@@ -298,6 +298,67 @@ export interface FinalizeResult {
   engagement_status: string;
 }
 
+/**
+ * The immutable snapshot inside a Report, as built by
+ * FinalizationService._build_snapshot.
+ *
+ * 03_DATA_MODEL.md makes this a full copy rather than a set of references, so
+ * that a finalized report keeps saying what it said on the day it was signed
+ * even if the corpus is later re-versioned. The UI reads the snapshot and never
+ * re-derives any of it from live tables, for the same reason.
+ */
+export interface ReportSnapshotFinding {
+  clause_id: string;
+  requirement_family: number;
+  title: string;
+  requirement_text: string;
+  final_status: ComplianceStatus | null;
+  review_note: string | null;
+  ai_suggested_status: ComplianceStatus | null;
+  ai_confidence: number | null;
+  ai_rationale: string | null;
+  citations: Citation[];
+  reviewed_by: string;
+  reviewed_at: string | null;
+}
+
+export interface ReportSnapshotGap {
+  clause_id: string;
+  title: string;
+  gap_note: string | null;
+}
+
+export interface ReportSnapshot {
+  engagement: {
+    id: string;
+    client_name: string;
+    entity_type: EntityType;
+    merchant_level: MerchantLevel | null;
+    existing_saq_type: string | null;
+  };
+  framework: string;
+  corpus_versions: string[];
+  generated_at: string;
+  generated_by: { id: string; name: string; role: Role };
+  findings: ReportSnapshotFinding[];
+  acknowledged_gaps: ReportSnapshotGap[];
+  rejected_finding_count: number;
+  summary: {
+    confirmed_requirements: number;
+    approved_findings: number;
+    acknowledged_gaps: number;
+  };
+}
+
+/** Mirrors ReportResponse. */
+export interface Report {
+  id: string;
+  engagement_id: string;
+  generated_by: string;
+  generated_at: string;
+  snapshot_data: ReportSnapshot;
+}
+
 /* --- Display helpers -------------------------------------------------------- */
 
 export const COMPLIANCE_STATUS_LABELS: Record<ComplianceStatus, string> = {
