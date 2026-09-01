@@ -1,11 +1,21 @@
 """Background pipeline worker (TASK-017, TASK-018, TASK-019).
 
 02_ARCHITECTURE.md §7.1 puts this in a separate process on the same host, and
-§7.5 describes its shape: claim documents in `processing`, extract, embed,
-retrieve, call the LLM, and write Findings *through the service layer* so the
-business rules are enforced in one place rather than duplicated here.
+§7.5 describes its shape: claim documents in `processing`, extract, chunk, embed
+(for discovery only), extract structured facts with provenance, then run the
+deterministic rule engine and the Evidence Gate — writing Findings *through the
+service layer* so the business rules are enforced in one place.
+
+The LLM is not on this path. It is called once, at the very end, to draft a
+plain-language explanation of a result that has already been determined.
 
 ADR-013: the `evidence_documents` table is the queue. There is no broker.
+
+The `matching_status` column keeps its name as the second-stage tracker even
+though the stage now evaluates rather than matches — renaming a status column
+across the schema, repositories and tests would be churn with no behavioural
+payoff. ponytail: name retained deliberately; rename if the column ever gains a
+second reader.
 
 Failure handling is the point of this module, not an afterthought. Every stage
 sets an explicit status:
@@ -13,11 +23,10 @@ sets an explicit status:
 * extraction failure  → `extraction_failed`, with a message safe to show an
   auditor. No Finding is created (01_REQUIREMENTS.md: "no partial/garbled data
   proceeds to matching").
-* embedding failure   → `matching_status = deferred`. The document stays stored
-  and extracted, and matching is retried on a later pass
-  (02_ARCHITECTURE.md §7.6).
-* LLM failure         → a Finding is still created, with nulls and
-  `needs_manual_review = true`, never dropped.
+* embedding failure   → evidence *discovery* is degraded. Evaluation is
+  unaffected: the rule engine needs no vectors (TASK-110).
+* LLM failure         → the Finding still exists with its facts, rule and
+  result; only the plain-language explanation is missing.
 * stuck in processing → swept to failed after a timeout, so no row waits forever.
 
 Run with:  python -m app.pipelines.worker
@@ -39,10 +48,12 @@ from app.db.session import session_scope
 from app.logging_setup import configure_logging
 from app.models.enums import ExtractionStatus
 from app.models.evidence import EvidenceDocument
-from app.pipelines import extraction, matching
+from app.pipelines import discovery, extraction
 from app.repositories.evidence import EvidenceChunkRepository, EvidenceDocumentRepository
 from app.services import file_storage
+from app.services.evaluation import EvaluationService
 from app.services.finding import FindingService
+from app.services.genai_service import draft_explanation
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +118,7 @@ def _store_chunks(
         db.flush()
         return
 
-    vectors = matching.embed_chunks([text for _, text in pieces])
+    vectors = discovery.embed_chunks([text for _, text in pieces])
     if vectors is None:
         # 02_ARCHITECTURE.md §7.6: extraction still completes and is stored;
         # matching is deferred and retried on a schedule.
@@ -129,60 +140,72 @@ def _store_chunks(
     db.flush()
 
 
-def process_matching(db: DBSession, document: EvidenceDocument) -> None:
-    """Retrieve candidate clauses and generate draft Findings for one document."""
-    chunks = EvidenceChunkRepository(db).list_for_document(document.id)
+def process_evaluation(db: DBSession, document: EvidenceDocument) -> None:
+    """Extract facts from one document, then re-evaluate the audit's controls.
 
-    if not chunks or all(c.embedding is None for c in chunks):
-        # Chunks exist but were never embedded (an earlier deferral). Retry the
-        # embedding step rather than concluding there is nothing to match.
-        result_sections = [
-            extraction.ExtractedSection(location=c.location, text=c.content) for c in chunks
-        ]
-        if result_sections:
-            vectors = matching.embed_chunks([s.text for s in result_sections])
-            if vectors is None:
-                document.matching_status = "deferred"
-                document.matching_attempts += 1
-                db.flush()
-                return
-            EvidenceChunkRepository(db).replace_for_document(
-                document.id,
-                [
-                    (index, section.text, section.location, vector)
-                    for index, (section, vector) in enumerate(
-                        zip(result_sections, vectors, strict=True)
-                    )
-                ],
-            )
-            chunks = EvidenceChunkRepository(db).list_for_document(document.id)
-        else:
-            document.matching_status = "skipped"
-            db.flush()
-            return
+    This replaces the old LLM-judgment step entirely (TASK-110). The sequence is
+    now: pull structured facts out of the extracted text with provenance, run the
+    deterministic rule engine and the Evidence Gate over them, and wrap each
+    result in a Finding awaiting human review. No model is consulted about
+    whether anything is compliant, here or anywhere downstream.
 
-    matches = matching.retrieve_matches(db, engagement_id=document.engagement_id, chunks=chunks)
+    Embeddings are computed too, but only for evidence *discovery* — an
+    embedding outage no longer affects evaluation at all, because facts and rules
+    need no vectors.
+    """
+    _refresh_embeddings(db, document)
 
-    if not matches:
-        # Nothing in the engagement's confirmed scope resembles this document.
-        # That is a real outcome, not an error — the auditor may have uploaded
-        # something out of scope, or the scope may not be confirmed yet.
-        document.matching_status = "no_match"
-        db.flush()
-        logger.info("matching.no_match document=%s", document.id)
-        return
+    evaluations = EvaluationService(db)
+    fact_count = evaluations.extract_facts_for_document(document)
 
     findings = FindingService(db)
     created = 0
-    for match in matches:
-        draft = matching.generate_finding(match, document.id)
-        findings.create_draft(document.engagement_id, draft)
+    for summary in evaluations.evaluate_audit(document.audit_id):
+        # Only the freshest evaluation per control becomes a Finding; earlier
+        # ones stay on the record as history (03_DATA_MODEL.md: evaluations are
+        # append-only, never edited in place).
+        finding = findings.create_for_evaluation(
+            document.audit_id,
+            summary.evaluation,
+            scoped_control_id=summary.scoped_control_id,
+            ai_explanation=None,
+        )
+        # Explanation drafting runs last and its failure is inert: the Finding
+        # already exists with its facts, rule and result. Prose is a courtesy.
+        finding.ai_explanation = draft_explanation(summary.evaluation, summary.control)
         created += 1
 
     document.matching_status = "complete"
     document.matching_error = None
     db.flush()
-    logger.info("matching.complete document=%s findings=%d", document.id, created)
+    logger.info(
+        "evaluation.complete document=%s facts=%d findings=%d",
+        document.id,
+        fact_count,
+        created,
+    )
+
+
+def _refresh_embeddings(db: DBSession, document: EvidenceDocument) -> None:
+    """Ensure this document's chunks are embedded, for discovery only.
+
+    A failure here is logged and tolerated. It used to block finding generation;
+    now it blocks nothing that determines a result.
+    """
+    chunks = EvidenceChunkRepository(db).list_for_document(document.id)
+    if not chunks or any(c.embedding is not None for c in chunks):
+        return
+    vectors = discovery.embed_chunks([c.content for c in chunks])
+    if vectors is None:
+        logger.warning("discovery.deferred document=%s reason=embedding_unavailable", document.id)
+        return
+    EvidenceChunkRepository(db).replace_for_document(
+        document.id,
+        [
+            (index, chunk.content, chunk.location, vector)
+            for index, (chunk, vector) in enumerate(zip(chunks, vectors, strict=True))
+        ],
+    )
 
 
 def run_once() -> int:
@@ -235,9 +258,9 @@ def run_once() -> int:
         with session_scope() as db:
             document = db.merge(document)
             try:
-                process_matching(db, document)
+                process_evaluation(db, document)
             except Exception:
-                logger.exception("Unhandled error matching document %s", document.id)
+                logger.exception("Unhandled error evaluating document %s", document.id)
                 document.matching_status = "deferred"
                 document.matching_attempts += 1
                 document.matching_error = "Matching failed and will be retried."

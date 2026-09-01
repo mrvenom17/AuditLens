@@ -196,242 +196,251 @@ Low-to-moderate — a Dockerized app can be redeployed to a managed platform lat
 
 ---
 
-# ADR-008: Product name is "AuditLens"
+# ADR-008: Deterministic-first evaluation; GenAI demoted to non-authoritative renderer
 
 ## Status
-Accepted
+Accepted — supersedes the evaluation-mechanism portion of ADR-003 (ADR-003's core point, human sign-off is architecturally enforced, still stands and is reinforced by this decision, not replaced by it).
 
 ## Context
-00_PRODUCT.md §5.1 carried the name as a working title with a `DECISION REQUIRED` marker. TASK-001 required it resolved before Phase 1, because the name appears in the OpenAPI title, the frontend metadata, the Compose project name, and the production hostname.
+The prior architecture (documented in the original 01_REQUIREMENTS/02_ARCHITECTURE revision) had an LLM directly produce a suggested compliance status for each piece of evidence, gated only by human review afterward. A more rigorous target architecture was subsequently frozen, separating fact extraction, deterministic rule evaluation, and an Evidence Gate from GenAI, which is now restricted to evidence-request drafting, result explanation, and report prose.
 
 ## Decision
-"AuditLens" is the confirmed product name for Stage 1.
+For any control marked `evaluation_mode=DETERMINISTIC` or `STRUCTURED`, the compliance result is produced exclusively by a rule engine with zero LLM/embedding dependency, checked by a mechanical Evidence Gate, before any human sees it. GenAI never determines truth.
 
 ## Reasoning
-It was already the working title throughout the documentation set; no competing candidate was proposed, and continuing to defer would have blocked TASK-002 scaffolding for no benefit. The name is internal-only at this stage (one firm, no external users), so the cost of changing it later is a find-and-replace, not a rebrand.
+An LLM judging compliance directly is fast but fundamentally unauditable in the way that matters most for this domain: it can hallucinate a value, be manipulated by adversarial content in evidence (prompt injection), or silently resolve a genuine contradiction instead of surfacing it. Human review after the fact catches some of this but not reliably — reviewers anchor on a confident-sounding AI suggestion. Removing the LLM from the truth-determination path entirely, and making "I don't have enough evidence" a first-class correct answer, produces a system that is trustworthy by construction rather than by hoped-for reviewer vigilance.
 
 ## Alternatives Considered
-Deferring until Stage 2 and scaffolding under a placeholder — rejected; a placeholder is a name, just a worse one that still propagates through the same files.
+Keeping the LLM-suggests/human-reviews model and hardening it with better prompting, confidence thresholds, and reviewer training — rejected; this treats a structural problem as a tuning problem, and the adversarial tests (05_SECURITY.md §10.11) specifically exist because prompting-level defenses are not reliable enough for this application's stakes.
 
 ## Consequences
-Appears in `pyproject.toml`, the FastAPI OpenAPI title, `frontend/package.json`, and the Compose project name.
+Controls that don't genuinely support deterministic verification cannot be included in the Level 0 scope, however useful automating them would be — see TASK-101's explicit rejection criterion. This is a real scope constraint, not a implementation detail.
 
 ## Reversal Cost
-Trivial at Stage 1; grows only once an external hostname is published.
+High, and should not be reversed — this is the product's core trust claim, independently arrived at by both the roadmap analysis and the frozen target architecture. Any future "just let the AI decide when it's confident enough" proposal should be treated as a regression, not a feature.
 
 ## Date
 2026-08-22
 
 ---
 
-# ADR-009: Anthropic Claude for reasoning, behind a provider-agnostic client interface
+# ADR-009: RAG demoted to evidence-discovery only
 
 ## Status
 Accepted
 
 ## Context
-02_ARCHITECTURE.md §7.2 names "LLM API (e.g., Claude)" without pinning a provider, and 00_PRODUCT.md §5.8 listed provider and budget ceiling as `DECISION REQUIRED`. Three features depend on it: scope suggestion (TASK-013), evidence-request drafting (TASK-015), and finding generation (TASK-019).
+The prior architecture used vector retrieval as part of the pipeline that led directly to a compliance suggestion.
 
 ## Decision
-Use Anthropic Claude via the official `anthropic` SDK, accessed exclusively through an `LLMClient` protocol defined in `/backend/app/pipelines/llm.py`. No route, service, or repository imports the vendor SDK directly. Budget control is structural (per-user rate limit on the interactive path, a serialised queue on the background path) rather than a currency ceiling in application code.
+pgvector/RAG answers only "where might relevant evidence be" — for the fact-extraction service's search and for an auditor manually browsing evidence. It never contributes to `ControlEvaluation.result`.
 
 ## Reasoning
-The documentation already leaned toward Claude, and the three call sites are all reasoning-heavy tasks where a frontier hosted model is the documented choice (ADR-005). Wrapping it in a protocol costs about twenty lines and makes the swap ADR-005 anticipates ("revisit if per-call API cost or data-residency requirements make it necessary later") a one-module change rather than a cross-cutting one. A hard spend ceiling belongs in the provider console: an application-level cost counter would be a second source of truth that silently drifts from actual billing.
+A retrieval system's job is relevance ranking, not truth-verification — conflating the two is how a well-crafted but irrelevant document could previously have influenced a compliance judgment (RAG poisoning, 05_SECURITY.md §10.1).
 
 ## Alternatives Considered
-Raw `httpx` calls against a configurable base URL — rejected; it trades a well-maintained dependency for hand-rolled retry, error-taxonomy, and timeout handling on the exact code path 02_ARCHITECTURE.md §7.6 requires to be most robust. OpenAI — equivalent on merits, no reason to prefer it here.
+Using retrieval confidence scores as an input to the rule engine — rejected; a similarity score is not a fact and has no place in a deterministic evaluation.
 
 ## Consequences
-`anthropic` is added to backend dependencies. `LLM_API_KEY` (already in the 09_DEPLOYMENT.md table) holds an Anthropic key. Every LLM call site must keep its documented fallback path, since the protocol makes failures uniform but does not make them impossible.
+None negative — RAG remains fully useful for its actual job (helping fact-extraction and auditors find the right document faster).
 
 ## Reversal Cost
-Low — one module implements the protocol.
+Low — this is a scoping decision about how a component's output is used, not a structural change to the component itself.
 
 ## Date
 2026-08-22
 
 ---
 
-# ADR-010: Corpus ships as a structural skeleton, not the copyrighted standard text
+# ADR-010: Level 0 scope narrowed to 5–10 deterministically-verifiable controls
 
 ## Status
-Accepted
+Accepted — supersedes the earlier assumption (original 00_PRODUCT.md) that Level 0 would eventually cover a broader slice of the PCI DSS v4.0.1 corpus.
 
 ## Context
-TASK-006 requires PCI DSS v4.0.1 requirement text in `PCIRequirement` rows, and its own Implementation Constraints flag the standard's licensing terms as outside the coding agent's authority. The full text of PCI DSS v4.0.1 is copyrighted by the PCI Security Standards Council and distributed under terms that restrict redistribution.
+The frozen roadmap explicitly identifies "prove the complete architecture works end-to-end on a small, well-chosen control set" as the actual Level 0 bar, rather than breadth of coverage.
 
 ## Decision
-Ship `/backend/app/corpus/pci_dss_v4_0_1.json` containing, for each base requirement: `clause_id`, `requirement_family`, `title`, and a firm-authored plain-language summary in `full_text`. Do not ship, scrape, or reproduce the Council's text. The loader reads whatever is in that file; substituting a licensed full-text export is a single-file replacement requiring no code change.
+Level 0's control corpus is limited to 5–10 controls, hand-selected specifically because their compliance status can be established from a fact plus a mechanical rule (e.g., minimum password length, MFA enabled, TLS minimum version) — not because they're the most commonly audited or most valuable controls in isolation.
 
 ## Reasoning
-Every downstream component — embedding, vector retrieval, scope suggestion, evidence-request drafting, finding generation — depends only on the *shape* of a corpus row, not on the provenance of its `full_text`. Shipping a structurally complete corpus therefore unblocks TASK-006 through TASK-019 and makes them fully testable, while leaving the one genuinely legal question where it belongs: with the firm. The alternative — blocking the entire critical path on a procurement question — would have left nothing built and the question no closer to answered.
+Proving the deterministic pipeline works correctly, including under adversarial conditions, on a small trusted set is more valuable at this stage than broad-but-shallow coverage of controls that would have to be force-fit into `evaluation_mode=DETERMINISTIC` without genuinely supporting it.
 
 ## Alternatives Considered
-Ingesting the published text directly — rejected; the coding agent cannot verify the firm holds redistribution rights, and 06_ENGINEERING_RULES.md's precedence rules do not grant authority to resolve a legal question by assumption. Shipping an empty corpus — rejected; it blocks TASK-018/019 testing for no gain over a summary corpus.
-
-## Granularity note
-07_TASKS.md estimates "~78 base requirements". PCI DSS numbers clauses at two levels: base requirements (`x.y`) and the defined requirements beneath them (`x.y.z`). Evidence matches at the finer level — a firewall configuration satisfies `1.2.1`, not all of `1.2` — so rows are stored at `x.y.z`. The shipped corpus holds 205 defined requirements spanning 63 base requirements across all 12 families. Both counts are pinned by a test so a future corpus swap that changes granularity fails loudly instead of silently changing what "scope" means.
+Scoping Level 0 to "as much of PCI DSS as the corpus already covers" (the original documentation's assumption) — rejected; this reintroduces exactly the temptation to fake determinism for controls that actually need human interpretation, which the new architecture's `HUMAN_ASSISTED` mode exists to honestly separate out instead.
 
 ## Consequences
-Retrieval and matching quality in the POC reflect summary text, not the literal standard. This is acceptable for validating the workflow (00_PRODUCT.md §5.6's functional criterion) but **must** be resolved before TASK-025 processes real client evidence, because a finding citing a paraphrase is not an audit-grade citation. `PCIRequirement.corpus_version` is set to `v4.0.1-summary` so no engagement can silently cite the skeleton as if it were the standard.
+Broader framework coverage is explicitly Level 1+ work (per the roadmap's own leveling), not a Level 0 deliverable.
 
 ## Reversal Cost
-Trivial by design — replace one JSON file, re-run the loader under a new `corpus_version`. Past engagements keep citing the version they actually ran against, per 03_DATA_MODEL.md's versioning rule.
+Low — expanding the control set later is additive (new `ControlDefinition` rows), not a rework of the pipeline itself.
 
 ## Date
 2026-08-22
 
 ---
 
-# ADR-011: Data-model additions required by higher-precedence documents
+# ADR-011: The frozen Level 0 control set is these eight
 
 ## Status
-Accepted
+Accepted — resolves the first `DECISION REQUIRED` in 00_PRODUCT.md §5.8 and completes TASK-101.
 
 ## Context
-The initial repository audit found six entities/fields that 01_REQUIREMENTS.md, 04_API_CONTRACT.md, or 07_TASKS.md require but that 03_DATA_MODEL.md does not define. Under the 06_ENGINEERING_RULES.md precedence order, 01_REQUIREMENTS.md and 05_SECURITY.md outrank 03_DATA_MODEL.md, so these are omissions in the data model rather than features to drop.
+ADR-010 fixed the *size* of the Level 0 set (5–10) and its selection principle, but the actual control ids had to be drawn from the implemented corpus rather than from the illustrative examples in 00_PRODUCT.md §5.5.
 
 ## Decision
-Add to 03_DATA_MODEL.md:
+Eight controls, authored as `evaluation_mode=DETERMINISTIC` in `backend/app/corpus/pci_dss_v4_0_1.json`:
 
-1. **`Session`** — required by TASK-004 and 01_REQUIREMENTS.md §User Authentication ("create a server-side session record"). Fields: `id`, `user_id`, `token_hash`, `created_at`, `last_seen_at`, `absolute_expires_at`, `revoked_at`. The cookie carries a random opaque token; only its SHA-256 hash is stored, so a database read cannot mint a valid session.
-2. **`LoginAttempt`** — required by 01_REQUIREMENTS.md §User Authentication ("creates/updates a `LoginAttempt` counter on failure"). Fields: `id`, `email`, `succeeded`, `created_at`. Lockout is a windowed count query, not a mutable counter row.
-3. **`ScopedRequirement.gap_acknowledged`** (boolean, default false) plus `gap_note` — required by 01_REQUIREMENTS.md §Engagement Finalization and 04_API_CONTRACT.md's finalize endpoint. Without it the documented finalization validation rule is unimplementable.
-4. **`Engagement.existing_saq_type`** (string, nullable) — accepted by `POST /api/engagements` in 04_API_CONTRACT.md and listed as an input in 01_REQUIREMENTS.md, but absent from the entity.
-5. **`Finding.citations`** (JSON array of `{evidence_document_id, location}`) replacing a bare ID array — 01_REQUIREMENTS.md §Evidence-to-Clause Matching processing rule 3 requires "an explicit citation (document + page/location, clause ID)", which a plain FK array cannot express. `evidence_document_ids` is retained as a derived, indexed column for query filtering.
-6. **`ClientProfileDocument`** — referenced by `source_document_ids` in 04_API_CONTRACT.md and by "Optionally links existing `ClientProfileDocument` rows" in 01_REQUIREMENTS.md, with no entity and no upload endpoint defined.
+| Control | Fact | Rule | Why it is deterministically verifiable |
+|---|---|---|---|
+| 8.3.6 | `minimum_password_length` | `>= 12` | A single integer in a password-policy export. |
+| 8.3.4 | `account_lockout_threshold` | `<= 10` | A single integer; the standard caps it at 10 attempts. |
+| 8.3.7 | `password_history_count` | `>= 4` | A single integer; the standard requires the last four. |
+| 8.2.8 | `idle_session_timeout_minutes` | `<= 15` | A single integer in minutes. |
+| 8.4.2 | `mfa_enabled` | `== true` | A boolean in an identity-provider export. |
+| 4.2.1 | `tls_minimum_version` | `IN ["1.2", "1.3"]` | An enumerated string in a TLS/proxy config. |
+| 10.5.1 | `log_retention_months` | `>= 12` | A single integer in months. |
+| 3.5.1 | `pan_rendered_unreadable` | `== true` | A boolean in a storage-encryption config. |
+
+Every other clause in the 205-clause corpus is authored `HUMAN_ASSISTED` and is never routed through the rule engine.
 
 ## Reasoning
-Each item is a mechanical consequence of a higher-precedence document, not a new architectural decision, so resolving them inside the precedence rules is preferable to halting the build. They are recorded here rather than applied silently because 06_ENGINEERING_RULES.md requires documentation updates when implementation reveals a specification gap.
+Each of these reduces to one value a human can confirm by opening the cited document at the cited page. That is the actual test of deterministic verifiability — not whether the control is important, but whether "what does the evidence literally say" has a single mechanical answer.
 
 ## Alternatives Considered
-Dropping the affected features — rejected; each is mandated by 01_REQUIREMENTS.md, which outranks the data model. Inventing them silently in code — rejected explicitly by the engineering rules.
+Including 8.3.9 (90-day password rotation) and 1.2.7 (six-monthly NSC review) to reach ten — rejected. Both depend on comparing a *cadence* against a review history rather than reading a configured value, which is closer to an interpretive judgment than a fact lookup. 06_ENGINEERING_RULES.md § Scope Control explicitly warns against force-fitting a control into DETERMINISTIC to reach a round number, so the set stops at eight.
 
 ## Consequences
-03_DATA_MODEL.md and 04_API_CONTRACT.md are updated in the same commit as this ADR. Item 6 additionally requires two endpoints that 04_API_CONTRACT.md does not define (`POST /api/client-profile-documents`, and assignment management) — see ADR-012.
+The rules are human-authored in a version-controlled file, reviewed as code. An LLM has no path to them (01_REQUIREMENTS.md). Expanding the set is additive: new rows, no pipeline change.
 
 ## Reversal Cost
-Low now, high after the first real engagement — these are schema changes to an append-only audit database.
+Low — the set is data, not code.
 
 ## Date
-2026-08-22
+2026-09-01
 
 ---
 
-# ADR-012: Endpoints required by the data model but absent from the API contract
+# ADR-012: Malware scanning is recorded, not upload-gating, at Level 0
 
 ## Status
-Accepted
+Accepted — resolves the second `DECISION REQUIRED` in 00_PRODUCT.md §5.8.
 
 ## Context
-03_DATA_MODEL.md states that "only a Reviewer or Admin can add/remove assignments" on `EngagementAssignment`, and 01_REQUIREMENTS.md requires `gap_acknowledged` to be "set by the Reviewer" — but 04_API_CONTRACT.md defines no endpoint for either. As written, an engagement could only ever be worked by its creator, and finalization with an acknowledged gap would be impossible to reach through the API.
+The target architecture flags malware scanning as "mandatory for higher-assurance deployment" without saying whether Level 0 must gate uploads on it. The answer changes TASK sequencing, because gating requires a scanner in the deployment before evidence upload can work at all.
 
 ## Decision
-Add four endpoints, documented in 04_API_CONTRACT.md with full auth/authz rules:
-
-- `POST /api/engagements/{id}/assignments` and `DELETE /api/engagements/{id}/assignments/{user_id}` — Reviewer/Admin only.
-- `PATCH /api/scoped-requirements/{id}/gap` — Reviewer only, sets `gap_acknowledged` + `gap_note`.
-- `POST /api/client-profile-documents` — firm-internal profile document upload, backing `source_document_ids` (ADR-011 item 6).
-
-Plus the supporting endpoints the contract implies but omits: `POST /api/auth/logout`, `GET /api/auth/me`, `GET /api/engagements`, `GET /api/engagements/{id}/scoped-requirements`, `GET /api/engagements/{id}/evidence-requests`, `GET /api/engagements/{id}/evidence-documents`, `GET /api/engagements/{id}/report`, and the Admin user-management endpoints 00_PRODUCT.md §5.3 grants the Admin role.
+`EvidenceDocument.malware_scan_status` exists and is returned by the API, defaulting to `not_scanned`. Upload is **not** blocked on it at Level 0.
 
 ## Reasoning
-Each closes a gap where a documented capability has no reachable path. None introduces a new capability: every one implements a permission that 00_PRODUCT.md §5.3 or 03_DATA_MODEL.md §8.2 already grants. Omitting them would mean shipping roles whose documented powers cannot be exercised.
+The existing upload path already enforces the controls that matter against the actual Level 0 threat: size limits, MIME/magic-byte validation, extension/content agreement, and passive-only parsers that never execute embedded content (01_REQUIREMENTS.md § Evidence Ingestion). Level 0 runs against a fabricated test company and, at most, one consenting client's documents on a single-tenant self-hosted box. Introducing a scanner dependency now would add a deployment component and a failure mode to the upload path without addressing a threat that is live at this stage.
+
+Making the field exist but read `not_scanned` is the honest option: the answer to "was this scanned?" is visible in the record rather than assumed either way.
 
 ## Alternatives Considered
-Auto-assigning all auditors to all engagements to avoid needing assignment endpoints — rejected outright; it would collapse the ownership boundary that 05_SECURITY.md §10.1 rates as the system's single Critical threat.
+- **Gate uploads on a clean scan now** — rejected as premature for Level 0; it adds an operational dependency ahead of the threat.
+- **Omit the field entirely until it is enforced** — rejected; a report that cannot say whether evidence was scanned is worse than one that says plainly that it was not.
 
 ## Consequences
-Every added endpoint is subject to the same ownership-filter and role rules as the contract's existing ones, and to TASK-022's authorization test sweep.
+Before any deployment handling real client evidence at volume, this becomes a gating check — the column and the API field are already in place, so that change is a service-layer edit, not a migration.
+
+## Reversal Cost
+Very low — the schema and contract already carry the field.
+
+## Date
+2026-09-01
+
+---
+
+# ADR-013: Applicability is deterministic; the LLM is demoted to advisory
+
+## Status
+Accepted.
+
+## Context
+The target architecture says the control corpus carries applicability conditions and the Scope Engine uses them to decide which controls apply. The code did neither: `ControlDefinition` had no conditions column, and scope was decided entirely by asking an LLM to pick clause ids from five profile fields.
+
+The consequence was worse than a missing feature. Nothing anywhere passed `applicable=False` to the rule engine, so `EvaluationResult.NOT_APPLICABLE` — one of the six documented result states — could never be produced. The system could describe the state and not reach it.
+
+## Decision
+`ControlDefinition.applicability_conditions` holds `[{fact, operator, expected}]`, AND-combined, evaluated against a structured `Audit.company_profile`. Scoping runs the deterministic pass first; the LLM then proposes over what the engine left open, and any proposal for a control the engine excluded is dropped and logged. `EvaluationService` passes `applicable=` so the sixth result state is reachable.
+
+The engine reuses `rule_engine.evaluate` via a small adapter rather than reimplementing comparison — a second operator implementation would be free to drift from the tested one.
+
+## Reasoning
+Applicability is a mechanical question ("is this entity a service provider?"), and mechanical questions belong on the deterministic side of this architecture for the same reason compliance verdicts do. Keeping the LLM as an advisory pass preserves its genuine value — proposing controls nobody authored a condition for — without letting it decide.
+
+## Alternatives Considered
+- **Deterministic only, drop LLM scoping** — rejected; 167 of 205 controls carry no conditions, and they would never be proposed at all.
+- **Keep the LLM primary, add conditions as display metadata** — rejected; the Scope Engine would still not be what the architecture describes.
+
+## Consequences
+`UNDETERMINED` is a first-class state and must never collapse into `NOT_APPLICABLE`. Three defences enforce that: an absent profile key emits no fact (so conditions on it resolve INSUFFICIENT_EVIDENCE → UNDETERMINED); an answered-but-empty list emits explicit negatives and *is* allowed to exclude; and `EXISTS`/`NOT_EXISTS` are rejected at authoring time because they answer PASS/FAIL for a missing fact and could therefore turn silence into exclusion.
+
+The Evidence Gate had to learn about this too — a NOT_APPLICABLE control has no evidence, and the gate's no-facts branch would otherwise have flagged every correctly-excluded control as unverifiable.
+
+## Reversal Cost
+Low. Conditions are data; removing them returns scoping to LLM-only.
+
+## Date
+2026-09-01
+
+---
+
+# ADR-014: Evidence strength is a deterministic rubric, not a score
+
+## Status
+Accepted.
+
+## Context
+The architecture shows the auditor "evidence strength" during review. Nothing computed it. The nearest signals were binary (`VerificationStatus`) or three-state (`GateStatus`), which say whether evidence is usable, not how much weight it bears.
+
+## Decision
+`evidence_strength.assess()` grades STRONG/MODERATE/WEAK/NONE from provenance already held: verification status, corroboration across **independent documents**, freshness margin (≥50% of the control's window), citation granularity, gate outcome and contradictions. `strength_factors` records which criteria fired.
+
+## Reasoning
+Ordered gates rather than a weighted score, because a threshold on a weighted sum cannot be explained to an auditor — and an unexplainable grade is no better than the model opinion this architecture removed. Corroboration counts distinct `document_id`s specifically: two extractions of one value from one export are one observation, and counting them twice would let a repetitive config dump grade STRONG.
+
+## Alternatives Considered
+- **LLM-scored strength** — rejected outright; it would reintroduce model judgment about how far to trust evidence, which is the auditor's job.
+- **Auditor-assigned** — rejected as the default; it adds review effort and yields no automatic signal, though an auditor can still override the result it informs.
+
+## Consequences
+A control with no `freshness_window_days` can never reach STRONG, since there is no margin to sit inside. All eight Level 0 deterministic controls declare a window, so this costs nothing today; the factor `no_freshness_window` makes the ceiling visible rather than mysterious.
+
+## Reversal Cost
+Low — one pure module and one column.
+
+## Date
+2026-09-01
+
+---
+
+# ADR-015: STRUCTURED mode checks presence and shape, not values
+
+## Status
+Accepted.
+
+## Context
+`EvaluationMode` declared three members and the engine implemented two. `evaluation_mode` was read twice in `rule_engine.evaluate` and never again, so STRUCTURED fell through the identical operator loop as DETERMINISTIC. The corpus contained zero STRUCTURED controls and there were zero tests — the third mode was a label.
+
+Worse, `ck_deterministic_requires_rules` did not cover STRUCTURED, so such a control could be authored with nothing to check and would return INSUFFICIENT_EVIDENCE forever, reading as missing evidence rather than as the authoring error it was.
+
+## Decision
+STRUCTURED gets its own branch. It asks whether every fact the control declares is **present and well-formed**, using `control.facts` as the required-field list — no new column. All present → PASS; some → PARTIAL; none → INSUFFICIENT_EVIDENCE; present but unparseable → FAIL. A new `ck_structured_requires_facts` constraint, mirrored in the loader and the authoring schema, rejects an empty one.
+
+## Reasoning
+This is the honest distinction from DETERMINISTIC, which compares values. A password minimum of 4 is a perfectly good *structured* answer and a bad *deterministic* one; conflating the two would make the mode decorative. FAIL for a malformed value rather than INSUFFICIENT_EVIDENCE is deliberate: the evidence was provided and is structurally wrong, which the document itself demonstrates — that is a finding, not a gap.
+
+## Alternatives Considered
+- **A separate `structured_checks` column** — rejected; `facts` already declares exactly the fields in question, and a second overlapping list would drift.
+- **Required-*document*-type checking** — deferred. `EvidenceDocument` carries `mime_type`, not a compliance classification, so there is nothing mechanical to check against yet.
+
+## Consequences
+One control (12.10.1) ships STRUCTURED so the path is exercised end to end rather than shipping as a dead capability.
 
 ## Reversal Cost
 Low.
 
 ## Date
-2026-08-22
-
----
-
-# ADR-013: Postgres as the background job queue; no message broker
-
-## Status
-Accepted
-
-## Context
-02_ARCHITECTURE.md §7.1 requires background workers in a separate process on the same host, and §7.5 describes the worker as picking up rows with `extraction_status=processing`. No broker (Redis, RabbitMQ, Celery) appears in the §7.2 technology stack or in 09_DEPLOYMENT.md's environment-variable table.
-
-## Decision
-The `evidence_documents` table is the queue. The worker polls for rows in a claimable state using `SELECT ... FOR UPDATE SKIP LOCKED`, processes them, and advances the status field. A sweep pass in the same loop marks rows stuck in `processing` past a timeout as failed, satisfying §7.5's stuck-row requirement.
-
-## Reasoning
-The architecture document already describes exactly this mechanism, so implementing it is adherence, not invention. `FOR UPDATE SKIP LOCKED` gives safe multi-worker claiming with no additional infrastructure, and at the documented scale (5–20 users, 20–60 documents per engagement) polling latency is irrelevant. Adding a broker would mean a new service to deploy, secure, back up, and monitor on a small self-hosted box — the operational overhead 02_ARCHITECTURE.md §7.1 and ADR-001 explicitly reject.
-
-## Alternatives Considered
-Celery + Redis — rejected as unjustified at this scale and absent from the documented stack. FastAPI `BackgroundTasks` — rejected; it runs in the API process, so a restart loses queued work and a large upload batch would compete with request handling, contradicting §7.9's reason for making the pipeline a background queue in the first place.
-
-## Consequences
-Job state is durable across worker restarts because it lives in the primary database. There is no retry-with-backoff scheduler beyond the documented single retry; if throughput ever becomes a real constraint this decision should be revisited before the worker is scaled horizontally.
-
-## Reversal Cost
-Low — the worker's claim/advance logic is confined to `/backend/app/pipelines/worker.py`.
-
-## Date
-2026-08-22
-
----
-
-# ADR-014: Production ingress is Cloudflare Tunnel only, with no published host ports
-
-## Status
-Accepted
-
-## Context
-09_DEPLOYMENT.md requires "HTTPS enforced via Cloudflare Tunnel — no direct unencrypted origin exposure". TASK-024 had to turn that sentence into a configuration, and the first attempt did not achieve it.
-
-## Decision
-In the production overlay, `api`, `web` and `db` all declare `ports: !reset null`. The Cloudflare Tunnel container is the only ingress; it connects outbound to Cloudflare and reaches the other services over the compose network.
-
-## Reasoning
-A bare `ports: []` does **not** remove the base file's mappings. Docker Compose *merges* sequences across overlay files, so an empty list is a no-op and the development loopback mappings survive into production. The first version of the overlay had exactly this bug, with a comment claiming the opposite; it was caught by inspecting `docker compose config` rather than by reading the file, which is the only way this class of error is findable.
-
-With no published ports, "the origin has no inbound listener" becomes a property of the topology rather than of a firewall rule someone has to remember to keep in place. That distinction matters on a self-hosted box that may later run unrelated applications (ADR-007).
-
-## Alternatives Considered
-Publishing to loopback only and relying on the host firewall — rejected; on a shared host any local process or user can still reach a loopback port, and the protection depends on configuration outside this repository. Binding the API to a Unix socket — rejected as unnecessary complexity once no port is published at all.
-
-## Consequences
-Local development and production now differ in a way that is easy to forget: `docker compose up` alone gives you reachable ports, and the overlay takes them away. The runbook shows a `docker compose config | grep ports` check for verifying it, and the reasoning is recorded at the call site so the next person does not "fix" `!reset` back to `[]`.
-
-## Reversal Cost
-Trivial.
-
-## Date
-2026-08-23
-
----
-
-# ADR-015: The worker image installs CPU-only PyTorch
-
-## Status
-Accepted
-
-## Context
-The worker runs the self-hosted embedding model (ADR-005), which pulls PyTorch. The default PyPI wheel bundles CUDA libraries — roughly 2.5GB of them.
-
-## Decision
-Install torch from PyTorch's CPU index (`--index-url https://download.pytorch.org/whl/cpu`) before installing sentence-transformers, so the CPU build is already satisfied when the latter resolves its dependencies.
-
-## Reasoning
-The documented deployment target is a small self-hosted Ubuntu server with no GPU (ADR-007), so the CUDA libraries are dead weight that is downloaded, stored, and shipped on every rebuild for no benefit. The measured worker image is 2.18GB; with the default wheel it was on track to exceed 6GB, and the first build attempt in fact failed on a pip read timeout part-way through that download.
-
-## Alternatives Considered
-Accepting the default wheel — rejected on size and on build reliability. Running embeddings on a hosted API instead — that is ADR-005's rejected alternative and remains rejected: keeping evidence content on the firm's own server for the mechanical vectorisation step is the point.
-
-## Consequences
-If this is ever deployed on a GPU host, the index URL must change to get GPU acceleration. Noted in the Dockerfile at the install site.
-
-## Reversal Cost
-Trivial — one line.
-
-## Date
-2026-08-23
+2026-09-01

@@ -8,12 +8,12 @@ hand-maintained list. That matters more than it might look: a hand-written list
 covers the endpoints someone remembered, and the endpoint that gets forgotten is
 exactly the one that ships without an authorization check. Here, adding a route
 without adding it to `PUBLIC_OPERATIONS` fails `test_every_route_is_accounted_for`,
-and adding an engagement-scoped route without listing it in `ENGAGEMENT_SCOPED`
-fails `test_every_engagement_scoped_route_is_swept`.
+and adding an audit-scoped route without listing it in `AUDIT_SCOPED`
+fails `test_every_audit_scoped_route_is_swept`.
 
 Mapped to 08_TESTING.md § Security Tests:
-  - unauthenticated access to any Engagement-scoped endpoint is rejected (401)
-  - an Auditor not in EngagementAssignment for X cannot read or write any of X's
+  - unauthenticated access to any Audit-scoped endpoint is rejected (401)
+  - an Auditor not in AuditAssignment for X cannot read or write any of X's
     data (403), even by guessing/enumerating IDs
   - a non-Reviewer calling finalize is rejected (403) regardless of Finding state
   - a Finding cannot reach approved without reviewed_by
@@ -34,8 +34,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session as DBSession
 
 from app.main import app
-from app.models.engagement import EngagementAssignment
-from app.models.enums import ComplianceStatus, EngagementStatus, FindingStatus, Role
+from app.models.audit import AuditAssignment
+from app.models.enums import AuditStatus, EvaluationResult, FindingStatus, Role
 from tests import filefixtures as ff
 
 PASSWORD = "correct-horse-battery-staple"
@@ -71,7 +71,7 @@ def all_operations() -> list[tuple[str, str]]:
 
 
 class ScopedRoute(NamedTuple):
-    """An engagement-scoped operation and how to call it."""
+    """An audit-scoped operation and how to call it."""
 
     method: str
     template: str
@@ -83,31 +83,33 @@ class ScopedRoute(NamedTuple):
         return (self.method, self.template)
 
 
-# Every operation that reads or writes engagement-owned data. Each is exercised
+# Every operation that reads or writes audit-owned data. Each is exercised
 # against a resource the caller has no relationship to.
-ENGAGEMENT_SCOPED: tuple[ScopedRoute, ...] = (
-    ScopedRoute("GET", "/api/engagements/{engagement_id}"),
-    ScopedRoute("POST", "/api/engagements/{engagement_id}/assignments", {"user_id": None}),
-    ScopedRoute("DELETE", "/api/engagements/{engagement_id}/assignments/{user_id}"),
-    ScopedRoute("GET", "/api/engagements/{engagement_id}/evidence-documents"),
-    ScopedRoute("POST", "/api/engagements/{engagement_id}/evidence-documents", send_file=True),
-    ScopedRoute("GET", "/api/engagements/{engagement_id}/evidence-requests"),
-    ScopedRoute("POST", "/api/engagements/{engagement_id}/evidence-requests/generate"),
-    ScopedRoute("GET", "/api/engagements/{engagement_id}/finalization-readiness"),
-    ScopedRoute("POST", "/api/engagements/{engagement_id}/finalize"),
-    ScopedRoute("GET", "/api/engagements/{engagement_id}/findings"),
-    ScopedRoute("GET", "/api/engagements/{engagement_id}/report"),
-    ScopedRoute("POST", "/api/engagements/{engagement_id}/scope-suggestion"),
-    ScopedRoute("GET", "/api/engagements/{engagement_id}/scoped-requirements"),
-    ScopedRoute(
-        "POST", "/api/engagements/{engagement_id}/scoped-requirements", {"clause_id": "1.2.1"}
-    ),
+AUDIT_SCOPED: tuple[ScopedRoute, ...] = (
+    ScopedRoute("GET", "/api/audits/{audit_id}"),
+    ScopedRoute("PATCH", "/api/audits/{audit_id}", {"company_profile": {}}),
+    ScopedRoute("POST", "/api/audits/{audit_id}/assignments", {"user_id": None}),
+    ScopedRoute("DELETE", "/api/audits/{audit_id}/assignments/{user_id}"),
+    ScopedRoute("GET", "/api/audits/{audit_id}/evidence-documents"),
+    ScopedRoute("POST", "/api/audits/{audit_id}/evidence-documents", send_file=True),
+    ScopedRoute("GET", "/api/audits/{audit_id}/evaluations"),
+    ScopedRoute("POST", "/api/audits/{audit_id}/evaluate"),
+    ScopedRoute("GET", "/api/audits/{audit_id}/evidence-requests"),
+    ScopedRoute("GET", "/api/audits/{audit_id}/facts"),
+    ScopedRoute("POST", "/api/audits/{audit_id}/evidence-requests/generate"),
+    ScopedRoute("GET", "/api/audits/{audit_id}/finalization-readiness"),
+    ScopedRoute("POST", "/api/audits/{audit_id}/finalize"),
+    ScopedRoute("GET", "/api/audits/{audit_id}/findings"),
+    ScopedRoute("GET", "/api/audits/{audit_id}/report"),
+    ScopedRoute("POST", "/api/audits/{audit_id}/scope-suggestion"),
+    ScopedRoute("GET", "/api/audits/{audit_id}/scoped-requirements"),
+    ScopedRoute("POST", "/api/audits/{audit_id}/scoped-requirements", {"control_id": "1.2.1"}),
     ScopedRoute("GET", "/api/evidence-documents/{document_id}"),
     ScopedRoute("GET", "/api/evidence-documents/{document_id}/download"),
     ScopedRoute("PATCH", "/api/evidence-requests/{request_id}", {"description": "Injected."}),
     ScopedRoute("GET", "/api/findings/{finding_id}"),
     ScopedRoute("GET", "/api/findings/{finding_id}/history"),
-    ScopedRoute("PATCH", "/api/findings/{finding_id}/review", {"action": "accept"}),
+    ScopedRoute("PATCH", "/api/findings/{finding_id}/review", {"action": "approve"}),
     ScopedRoute("PATCH", "/api/scoped-requirements/{scoped_id}", {"confirmed": True}),
     ScopedRoute(
         "PATCH",
@@ -116,44 +118,53 @@ ENGAGEMENT_SCOPED: tuple[ScopedRoute, ...] = (
     ),
 )
 
-# Operations that are not engagement-scoped, with why. Listing them explicitly
-# is what lets `test_every_engagement_scoped_route_is_swept` be exhaustive.
+# Operations that are not audit-scoped, with why. Listing them explicitly
+# is what lets `test_every_audit_scoped_route_is_swept` be exhaustive.
 NON_SCOPED_OPERATIONS: dict[tuple[str, str], str] = {
     ("GET", "/health"): "liveness probe",
     ("GET", "/health/ready"): "readiness probe",
     ("POST", "/api/auth/login"): "establishes the session",
     ("POST", "/api/auth/logout"): "acts on the caller's own session",
     ("GET", "/api/auth/me"): "returns the caller's own identity",
-    ("GET", "/api/engagements"): "list — scoped by filtering, covered separately",
-    ("POST", "/api/engagements"): "creates a new engagement; no existing resource",
-    # Firm-wide, not engagement-owned (03_DATA_MODEL.md → ClientProfileDocument).
-    ("POST", "/api/client-profile-documents"): "firm-held document, no engagement",
-    # Admin-gated rather than engagement-scoped. Covered by TestAdminRoutesAreRoleGated
+    ("GET", "/api/audits"): "list — scoped by filtering, covered separately",
+    ("POST", "/api/audits"): "creates a new audit; no existing resource",
+    # Firm-wide, not audit-owned (03_DATA_MODEL.md → ClientProfileDocument).
+    ("POST", "/api/client-profile-documents"): "firm-held document, no audit",
+    # Admin-gated rather than audit-scoped. Covered by TestAdminRoutesAreRoleGated
     # below and exhaustively in test_admin.py.
     ("GET", "/api/admin/users"): "admin role gate",
     ("POST", "/api/admin/users"): "admin role gate",
     ("PATCH", "/api/admin/users/{user_id}"): "admin role gate",
+    # Firm-wide reference data, not audit-owned: the control corpus is the
+    # published standard's mechanics, readable by any authenticated user and
+    # writable only by an Admin (04_API_CONTRACT.md).
+    ("GET", "/api/control-definitions"): "firm-wide corpus, any authenticated user",
+    ("POST", "/api/control-definitions"): "admin role gate, firm-wide corpus",
 }
 
-# Operations behind the admin role gate. Kept separate from the engagement
+# Operations behind the admin role gate. Kept separate from the audit
 # sweep because their boundary is role, not assignment.
 ADMIN_ONLY: tuple[tuple[str, str], ...] = (
     ("GET", "/api/admin/users"),
     ("POST", "/api/admin/users"),
     ("PATCH", "/api/admin/users/{user_id}"),
+    # Authoring a control definition is the one write that decides what the rule
+    # engine treats as ground truth (01_REQUIREMENTS.md), so its role gate is
+    # swept alongside the other admin routes.
+    ("POST", "/api/control-definitions"),
 )
 
 
 @pytest.fixture
-def populated_engagement(
+def populated_audit(
     db: DBSession,
     make_user: Any,
-    make_engagement: Any,
+    make_audit: Any,
     make_scoped_requirement: Any,
     make_finding: Any,
     api_client: TestClient,
 ) -> dict[str, Any]:
-    """An engagement owned by one Auditor, with one of every sub-resource.
+    """An audit owned by one Auditor, with one of every sub-resource.
 
     Every sub-resource is real and reachable, so a failure to scope any one of
     them shows up as data returned rather than as a 404 that merely looks like
@@ -163,21 +174,19 @@ def populated_engagement(
 
     owner = make_user(Role.auditor, password=PASSWORD, name="Owner Auditor")
     reviewer = make_user(Role.reviewer, password=PASSWORD, name="Reviewer")
-    engagement = make_engagement(
-        owner, status=EngagementStatus.in_progress, client_name="Confidential Client Ltd"
-    )
-    scoped = make_scoped_requirement(engagement, confirmed=True)
-    finding = make_finding(engagement, status=FindingStatus.draft, scoped_requirement=scoped)
+    audit = make_audit(owner, status=AuditStatus.in_progress, client_name="Confidential Client Ltd")
+    scoped = make_scoped_requirement(audit, confirmed=True)
+    finding = make_finding(audit, status=FindingStatus.pending_review, scoped_control=scoped)
     request = EvidenceRequestRepository(db).create(
-        engagement_id=engagement.id,
-        scoped_requirement_id=scoped.id,
+        audit_id=audit.id,
+        scoped_control_id=scoped.id,
         description="Provide the firewall export.",
         description_source="template",
     )
 
     login(api_client, owner)
     document = api_client.post(
-        f"/api/engagements/{engagement.id}/evidence-documents",
+        f"/api/audits/{audit.id}/evidence-documents",
         files={"file": ("evidence.pdf", ff.valid_pdf(), "application/pdf")},
     ).json()
     api_client.post("/api/auth/logout")
@@ -185,7 +194,7 @@ def populated_engagement(
     return {
         "owner": owner,
         "reviewer": reviewer,
-        "engagement": engagement,
+        "audit": audit,
         "scoped": scoped,
         "finding": finding,
         "request": request,
@@ -195,7 +204,7 @@ def populated_engagement(
 
 def resolve(route: ScopedRoute, setup: dict[str, Any], target_user_id: uuid.UUID) -> str:
     return (
-        route.template.replace("{engagement_id}", str(setup["engagement"].id))
+        route.template.replace("{audit_id}", str(setup["audit"].id))
         .replace("{document_id}", str(setup["document_id"]))
         .replace("{request_id}", str(setup["request"].id))
         .replace("{finding_id}", str(setup["finding"].id))
@@ -222,13 +231,13 @@ class TestRouteTableIsFullyAccountedFor:
 
     def test_every_route_is_accounted_for(self) -> None:
         operations = set(all_operations())
-        classified = set(NON_SCOPED_OPERATIONS) | {r.key for r in ENGAGEMENT_SCOPED}
+        classified = set(NON_SCOPED_OPERATIONS) | {r.key for r in AUDIT_SCOPED}
 
         unclassified = operations - classified
         assert not unclassified, (
             f"These operations are not covered by the authorization sweep: "
-            f"{sorted(unclassified)}. Add each to ENGAGEMENT_SCOPED (if it touches "
-            f"engagement-owned data) or to NON_SCOPED_OPERATIONS with a reason."
+            f"{sorted(unclassified)}. Add each to AUDIT_SCOPED (if it touches "
+            f"audit-owned data) or to NON_SCOPED_OPERATIONS with a reason."
         )
 
         stale = classified - operations
@@ -242,7 +251,7 @@ class TestRouteTableIsFullyAccountedFor:
 
 
 class TestUnauthenticatedAccess:
-    """08_TESTING.md: "Unauthenticated access to any Engagement-scoped endpoint
+    """08_TESTING.md: "Unauthenticated access to any Audit-scoped endpoint
     is rejected (401)"."""
 
     @pytest.mark.parametrize(
@@ -254,7 +263,7 @@ class TestUnauthenticatedAccess:
         self, api_client: TestClient, method: str, path: str
     ) -> None:
         url = (
-            path.replace("{engagement_id}", str(uuid.uuid4()))
+            path.replace("{audit_id}", str(uuid.uuid4()))
             .replace("{document_id}", str(uuid.uuid4()))
             .replace("{request_id}", str(uuid.uuid4()))
             .replace("{finding_id}", str(uuid.uuid4()))
@@ -270,33 +279,33 @@ class TestUnauthenticatedAccess:
         assert response.json()["error"]["code"] == "NOT_AUTHENTICATED"
 
     def test_a_forged_session_cookie_is_rejected_everywhere(
-        self, api_client: TestClient, populated_engagement: dict[str, Any]
+        self, api_client: TestClient, populated_audit: dict[str, Any]
     ) -> None:
         from app.services.auth import SESSION_COOKIE_NAME
 
         api_client.cookies.set(SESSION_COOKIE_NAME, "forged-token")
-        setup = populated_engagement
+        setup = populated_audit
 
-        for route in ENGAGEMENT_SCOPED:
+        for route in AUDIT_SCOPED:
             url = resolve(route, setup, setup["owner"].id)
             response = call(api_client, route, url, setup)
             assert response.status_code == 401, f"{route.method} {route.template}"
 
 
-class TestCrossEngagementIsolation:
-    """08_TESTING.md: "An Auditor not in EngagementAssignment for Engagement X
+class TestCrossAuditIsolation:
+    """08_TESTING.md: "An Auditor not in AuditAssignment for Audit X
     cannot read or write any of X's data (403), even by guessing/enumerating
     IDs." 05_SECURITY.md §10.1 rates this the only Critical threat."""
 
-    @pytest.mark.parametrize("route", ENGAGEMENT_SCOPED, ids=lambda r: f"{r.method} {r.template}")
+    @pytest.mark.parametrize("route", AUDIT_SCOPED, ids=lambda r: f"{r.method} {r.template}")
     def test_unassigned_auditor_is_denied_on_every_scoped_operation(
         self,
         api_client: TestClient,
         make_user: Any,
-        populated_engagement: dict[str, Any],
+        populated_audit: dict[str, Any],
         route: ScopedRoute,
     ) -> None:
-        setup = populated_engagement
+        setup = populated_audit
         intruder = make_user(Role.auditor, password=PASSWORD, name="Unassigned Auditor")
         login(api_client, intruder)
 
@@ -311,19 +320,19 @@ class TestCrossEngagementIsolation:
             f"to an unassigned auditor"
         )
 
-    @pytest.mark.parametrize("route", ENGAGEMENT_SCOPED, ids=lambda r: f"{r.method} {r.template}")
+    @pytest.mark.parametrize("route", AUDIT_SCOPED, ids=lambda r: f"{r.method} {r.template}")
     def test_no_client_data_leaks_in_a_denial_response(
         self,
         api_client: TestClient,
         make_user: Any,
-        populated_engagement: dict[str, Any],
+        populated_audit: dict[str, Any],
         route: ScopedRoute,
     ) -> None:
         """A denial must not disclose through its body what it refused to
         disclose through its status. The client name is the canary: it is
         Internal-classified (03_DATA_MODEL.md §8.4) and present on the
-        engagement every one of these routes hangs off."""
-        setup = populated_engagement
+        audit every one of these routes hangs off."""
+        setup = populated_audit
         intruder = make_user(Role.auditor, password=PASSWORD)
         login(api_client, intruder)
 
@@ -334,7 +343,7 @@ class TestCrossEngagementIsolation:
         assert "Provide the firewall export" not in response.text
 
     def test_enumerating_random_ids_yields_nothing(
-        self, api_client: TestClient, make_user: Any, populated_engagement: dict[str, Any]
+        self, api_client: TestClient, make_user: Any, populated_audit: dict[str, Any]
     ) -> None:
         """ "Even by guessing/enumerating IDs" — a caller with no relationship to
         anything gets the same answer for a real id and an invented one."""
@@ -342,50 +351,50 @@ class TestCrossEngagementIsolation:
         login(api_client, auditor)
 
         for _ in range(10):
-            response = api_client.get(f"/api/engagements/{uuid.uuid4()}")
+            response = api_client.get(f"/api/audits/{uuid.uuid4()}")
             assert response.status_code == 404
             assert "Confidential Client Ltd" not in response.text
 
-    def test_an_auditor_sees_no_other_engagement_in_any_list(
-        self, api_client: TestClient, make_user: Any, populated_engagement: dict[str, Any]
+    def test_an_auditor_sees_no_other_audit_in_any_list(
+        self, api_client: TestClient, make_user: Any, populated_audit: dict[str, Any]
     ) -> None:
         auditor = make_user(Role.auditor, password=PASSWORD)
         login(api_client, auditor)
 
-        listing = api_client.get("/api/engagements").json()
+        listing = api_client.get("/api/audits").json()
 
         assert listing["items"] == []
         assert listing["total"] == 0
 
     def test_revoked_assignment_denies_every_scoped_operation(
-        self, api_client: TestClient, db: DBSession, populated_engagement: dict[str, Any]
+        self, api_client: TestClient, db: DBSession, populated_audit: dict[str, Any]
     ) -> None:
         """Access is re-derived per request, so removing an assignment takes
         effect immediately rather than at the owner's next login."""
-        setup = populated_engagement
+        setup = populated_audit
         assignment = (
-            db.query(EngagementAssignment)
-            .filter_by(engagement_id=setup["engagement"].id, user_id=setup["owner"].id)
+            db.query(AuditAssignment)
+            .filter_by(audit_id=setup["audit"].id, user_id=setup["owner"].id)
             .one()
         )
         db.delete(assignment)
         db.flush()
 
         login(api_client, setup["owner"])
-        for route in ENGAGEMENT_SCOPED:
+        for route in AUDIT_SCOPED:
             url = resolve(route, setup, setup["owner"].id)
             response = call(api_client, route, url, setup)
             assert response.status_code in (403, 404), f"{route.method} {route.template}"
 
     def test_assigned_auditor_can_reach_the_read_operations(
-        self, api_client: TestClient, populated_engagement: dict[str, Any]
+        self, api_client: TestClient, populated_audit: dict[str, Any]
     ) -> None:
         """The boundary must admit the people it is supposed to admit. A filter
         that denies everyone would pass every test above and be useless."""
-        setup = populated_engagement
+        setup = populated_audit
         login(api_client, setup["owner"])
 
-        for route in ENGAGEMENT_SCOPED:
+        for route in AUDIT_SCOPED:
             if route.method != "GET":
                 continue
             url = resolve(route, setup, setup["owner"].id)
@@ -401,14 +410,14 @@ class TestCrossEngagementIsolation:
 class TestReviewerAndAdminVisibility:
     @pytest.mark.parametrize(
         "route",
-        [r for r in ENGAGEMENT_SCOPED if r.method == "GET"],
+        [r for r in AUDIT_SCOPED if r.method == "GET"],
         ids=lambda r: f"{r.method} {r.template}",
     )
-    def test_reviewer_may_read_any_engagement_without_an_assignment(
-        self, api_client: TestClient, populated_engagement: dict[str, Any], route: ScopedRoute
+    def test_reviewer_may_read_any_audit_without_an_assignment(
+        self, api_client: TestClient, populated_audit: dict[str, Any], route: ScopedRoute
     ) -> None:
-        """03_DATA_MODEL.md §8.2: Reviewers see all engagements at the firm."""
-        setup = populated_engagement
+        """03_DATA_MODEL.md §8.2: Reviewers see all audits at the firm."""
+        setup = populated_audit
         login(api_client, setup["reviewer"])
 
         url = resolve(route, setup, setup["owner"].id)
@@ -419,17 +428,17 @@ class TestReviewerAndAdminVisibility:
 
     @pytest.mark.parametrize(
         "route",
-        [r for r in ENGAGEMENT_SCOPED if r.method == "GET"],
+        [r for r in AUDIT_SCOPED if r.method == "GET"],
         ids=lambda r: f"{r.method} {r.template}",
     )
-    def test_admin_may_read_any_engagement_for_support(
+    def test_admin_may_read_any_audit_for_support(
         self,
         api_client: TestClient,
         make_user: Any,
-        populated_engagement: dict[str, Any],
+        populated_audit: dict[str, Any],
         route: ScopedRoute,
     ) -> None:
-        setup = populated_engagement
+        setup = populated_audit
         admin = make_user(Role.admin, password=PASSWORD)
         login(api_client, admin)
 
@@ -439,66 +448,66 @@ class TestReviewerAndAdminVisibility:
         expected = (404,) if route.template.endswith("/report") else (200,)
         assert response.status_code in expected
 
-    def test_admin_engagement_access_is_logged_distinctly(
+    def test_admin_audit_access_is_logged_distinctly(
         self,
         api_client: TestClient,
         make_user: Any,
-        populated_engagement: dict[str, Any],
+        populated_audit: dict[str, Any],
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """03_DATA_MODEL.md §8.2: "every Admin access to engagement content is
+        """03_DATA_MODEL.md §8.2: "every Admin access to audit content is
         logged distinctly from normal Reviewer access (Admins are not expected
         to routinely view client evidence)"."""
         import logging
 
-        setup = populated_engagement
+        setup = populated_audit
         admin = make_user(Role.admin, password=PASSWORD)
         login(api_client, admin)
 
         with caplog.at_level(logging.WARNING, logger="auditlens.audit"):
-            api_client.get(f"/api/engagements/{setup['engagement'].id}")
+            api_client.get(f"/api/audits/{setup['audit'].id}")
 
-        assert any("admin.engagement_access" in record.message for record in caplog.records)
+        assert any("admin.audit_access" in record.message for record in caplog.records)
 
     def test_reviewer_access_is_not_logged_as_admin_access(
         self,
         api_client: TestClient,
-        populated_engagement: dict[str, Any],
+        populated_audit: dict[str, Any],
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """The distinction is only useful if normal Reviewer work does not also
         trip it — an alert that fires constantly is an alert nobody reads."""
         import logging
 
-        setup = populated_engagement
+        setup = populated_audit
         login(api_client, setup["reviewer"])
 
         with caplog.at_level(logging.WARNING, logger="auditlens.audit"):
-            api_client.get(f"/api/engagements/{setup['engagement'].id}")
+            api_client.get(f"/api/audits/{setup['audit'].id}")
 
-        assert not any("admin.engagement_access" in r.message for r in caplog.records)
+        assert not any("admin.audit_access" in r.message for r in caplog.records)
 
 
 class TestRoleGates:
     """Role restrictions that hold even for a caller with full access to the
-    engagement — authority is separate from visibility."""
+    audit — authority is separate from visibility."""
 
     def test_assigned_auditor_cannot_finalize(
-        self, api_client: TestClient, populated_engagement: dict[str, Any]
+        self, api_client: TestClient, populated_audit: dict[str, Any]
     ) -> None:
-        setup = populated_engagement
+        setup = populated_audit
         login(api_client, setup["owner"])
 
-        response = api_client.post(f"/api/engagements/{setup['engagement'].id}/finalize")
+        response = api_client.post(f"/api/audits/{setup['audit'].id}/finalize")
 
         assert response.status_code == 403
 
     def test_assigned_auditor_cannot_acknowledge_a_gap(
-        self, api_client: TestClient, populated_engagement: dict[str, Any]
+        self, api_client: TestClient, populated_audit: dict[str, Any]
     ) -> None:
         """The gap flag is what permits finalizing without evidence, so it
         carries finalization-level authority (ADR-012)."""
-        setup = populated_engagement
+        setup = populated_audit
         login(api_client, setup["owner"])
 
         response = api_client.patch(
@@ -509,45 +518,43 @@ class TestRoleGates:
         assert response.status_code == 403
 
     def test_assigned_auditor_cannot_change_assignments(
-        self, api_client: TestClient, make_user: Any, populated_engagement: dict[str, Any]
+        self, api_client: TestClient, make_user: Any, populated_audit: dict[str, Any]
     ) -> None:
         """If an Auditor could assign, the ownership boundary would be
         self-service and therefore no boundary at all."""
-        setup = populated_engagement
+        setup = populated_audit
         colleague = make_user(Role.auditor, password=PASSWORD)
         login(api_client, setup["owner"])
 
         response = api_client.post(
-            f"/api/engagements/{setup['engagement'].id}/assignments",
+            f"/api/audits/{setup['audit'].id}/assignments",
             json={"user_id": str(colleague.id)},
         )
 
         assert response.status_code == 403
 
-    def test_admin_cannot_create_an_engagement(
-        self, api_client: TestClient, make_user: Any
-    ) -> None:
+    def test_admin_cannot_create_an_audit(self, api_client: TestClient, make_user: Any) -> None:
         """04_API_CONTRACT.md restricts creation to auditor or reviewer."""
         admin = make_user(Role.admin, password=PASSWORD)
         login(api_client, admin)
 
         response = api_client.post(
-            "/api/engagements",
+            "/api/audits",
             json={"client_name": "X", "entity_type": "merchant", "merchant_level": "1"},
         )
 
         assert response.status_code == 403
 
     def test_admin_cannot_finalize_despite_seeing_everything(
-        self, api_client: TestClient, make_user: Any, populated_engagement: dict[str, Any]
+        self, api_client: TestClient, make_user: Any, populated_audit: dict[str, Any]
     ) -> None:
         """00_PRODUCT.md §5.3: sign-off authority is a role property, not an
         escalation path."""
-        setup = populated_engagement
+        setup = populated_audit
         admin = make_user(Role.admin, password=PASSWORD)
         login(api_client, admin)
 
-        response = api_client.post(f"/api/engagements/{setup['engagement'].id}/finalize")
+        response = api_client.post(f"/api/audits/{setup['audit'].id}/finalize")
 
         assert response.status_code == 403
 
@@ -681,14 +688,14 @@ class TestPrivilegeEscalationSurface:
                 overlap -= {"user_id"}
             assert not overlap, f"{name} accepts client-supplied {sorted(overlap)}"
 
-    def test_supplying_a_role_at_engagement_creation_is_ignored(
+    def test_supplying_a_role_at_audit_creation_is_ignored(
         self, api_client: TestClient, make_user: Any, db: DBSession
     ) -> None:
         auditor = make_user(Role.auditor, password=PASSWORD)
         login(api_client, auditor)
 
         api_client.post(
-            "/api/engagements",
+            "/api/audits",
             json={
                 "client_name": "Escalation Attempt",
                 "entity_type": "merchant",
@@ -701,31 +708,31 @@ class TestPrivilegeEscalationSurface:
         assert auditor.role == Role.auditor
 
     def test_a_deactivated_user_loses_access_immediately(
-        self, api_client: TestClient, db: DBSession, populated_engagement: dict[str, Any]
+        self, api_client: TestClient, db: DBSession, populated_audit: dict[str, Any]
     ) -> None:
         """Role and active state are re-read per request, so deactivation does
         not wait for the session to expire."""
-        setup = populated_engagement
+        setup = populated_audit
         login(api_client, setup["owner"])
-        assert api_client.get(f"/api/engagements/{setup['engagement'].id}").status_code == 200
+        assert api_client.get(f"/api/audits/{setup['audit'].id}").status_code == 200
 
         setup["owner"].is_active = False
         db.flush()
 
-        assert api_client.get(f"/api/engagements/{setup['engagement'].id}").status_code == 401
+        assert api_client.get(f"/api/audits/{setup['audit'].id}").status_code == 401
 
     def test_demoting_a_reviewer_revokes_finalize_immediately(
-        self, api_client: TestClient, db: DBSession, populated_engagement: dict[str, Any]
+        self, api_client: TestClient, db: DBSession, populated_audit: dict[str, Any]
     ) -> None:
-        setup = populated_engagement
+        setup = populated_audit
         login(api_client, setup["reviewer"])
-        # Ready the engagement so only the role stands between them and success.
+        # Ready the audit so only the role stands between them and success.
         api_client.patch(f"/api/findings/{setup['finding'].id}/review", json={"action": "accept"})
 
         setup["reviewer"].role = Role.auditor
         db.flush()
 
-        response = api_client.post(f"/api/engagements/{setup['engagement'].id}/finalize")
+        response = api_client.post(f"/api/audits/{setup['audit'].id}/finalize")
         assert response.status_code == 403
 
 
@@ -739,13 +746,13 @@ class TestFindingApprovalBoundary:
     covered by the sweep."""
 
     def test_the_database_refuses_an_approved_finding_without_a_reviewer(
-        self, db: DBSession, populated_engagement: dict[str, Any]
+        self, db: DBSession, populated_audit: dict[str, Any]
     ) -> None:
         from sqlalchemy.exc import IntegrityError
 
-        setup = populated_engagement
+        setup = populated_audit
         setup["finding"].status = FindingStatus.approved
-        setup["finding"].final_status = ComplianceStatus.satisfied
+        setup["finding"].auditor_decision = EvaluationResult.PASS
         setup["finding"].reviewed_by = None
 
         with pytest.raises(IntegrityError, match="ck_approved_requires_reviewer"):

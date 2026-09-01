@@ -1,12 +1,18 @@
-"""Finding review tests (TASK-020).
+"""Finding review tests (TASK-020, TASK-106, TASK-114).
 
-TASK-020 requires tests for the accept/edit/reject paths and the
-Reviewer-overrides-Auditor case with history verification.
+The review path changed shape in this revision. A Finding no longer wraps an AI
+suggestion the human accepts or edits; it wraps a `ControlEvaluation` the machine
+produced, and the human records a *separate* `auditor_decision` beside it.
 
-08_TESTING.md § Security Tests requires one of these specifically be attempted
-"via direct service-layer call, not just via the API, to catch any bypass path":
-a Finding must not reach `status=approved` without `reviewed_by` set. That is
-`TestApprovalRequiresAReviewer`.
+Two invariants carry the product, and both are tested here:
+
+* **`system_result` is never overwritten.** Approving, rejecting, or overriding
+  all leave `ControlEvaluation.result` byte-identical. This is what keeps "how
+  often did the human disagree with the machine" answerable later
+  (01_REQUIREMENTS.md § Finding Review, Explicitly Forbidden Behavior).
+* **No Finding reaches `approved` without `reviewed_by`** (ADR-003). 08_TESTING.md
+  requires this be attempted "via direct service-layer call, not just via the
+  API, to catch any bypass path" — that is `TestApprovalRequiresAReviewer`.
 """
 
 from __future__ import annotations
@@ -21,8 +27,15 @@ from sqlalchemy.orm import Session as DBSession
 
 from app.api.deps import Actor
 from app.errors import ValidationError
-from app.models.engagement import EngagementAssignment
-from app.models.enums import ComplianceStatus, EngagementStatus, FindingAction, FindingStatus, Role
+from app.models.audit import AuditAssignment
+from app.models.enums import (
+    AuditStatus,
+    EvaluationResult,
+    FindingAction,
+    FindingStatus,
+    GateStatus,
+    Role,
+)
 from app.models.finding import FindingHistory
 from app.services.finding import FindingService
 
@@ -41,331 +54,277 @@ def actor_for(user: Any) -> Actor:
 
 
 @pytest.fixture
-def engagement_with_draft(
-    db: DBSession, make_user: Any, make_engagement: Any, make_finding: Any
+def audit_with_draft(
+    db: DBSession, make_user: Any, make_audit: Any, make_finding: Any
 ) -> dict[str, Any]:
-    """One draft Finding on an engagement an Auditor and a Reviewer both work."""
+    """One pending Finding on an audit an Auditor and a Reviewer both work."""
     auditor = make_user(Role.auditor, password=PASSWORD, name="Junior Auditor")
-    reviewer = make_user(Role.reviewer, password=PASSWORD, name="Engagement Lead")
-    engagement = make_engagement(auditor, status=EngagementStatus.in_progress)
-    db.add(EngagementAssignment(engagement_id=engagement.id, user_id=reviewer.id))
+    reviewer = make_user(Role.reviewer, password=PASSWORD, name="Audit Lead")
+    audit = make_audit(auditor, status=AuditStatus.in_progress)
+    db.add(AuditAssignment(audit_id=audit.id, user_id=reviewer.id))
     db.flush()
-    finding = make_finding(engagement, status=FindingStatus.draft)
+    finding = make_finding(
+        audit, status=FindingStatus.pending_review, system_result=EvaluationResult.PASS
+    )
     return {
         "auditor": auditor,
         "reviewer": reviewer,
-        "engagement": engagement,
+        "audit": audit,
         "finding": finding,
     }
 
 
-class TestAcceptPath:
-    def test_accept_approves_with_the_ai_suggested_status(
-        self, api_client: TestClient, db: DBSession, engagement_with_draft: dict[str, Any]
+class TestApprovePath:
+    def test_approving_without_a_decision_adopts_the_system_result(
+        self, db: DBSession, api_client: TestClient, audit_with_draft: dict[str, Any]
     ) -> None:
-        """01_REQUIREMENTS.md § Processing Rules: accept sets status=approved,
-        final_status=ai_suggestion, and the reviewer fields."""
-        setup = engagement_with_draft
+        """Omitting `auditor_decision` means "I agree with the machine". The
+        value is *copied* into the human's column, not aliased, so both remain
+        independently readable afterwards."""
+        setup = audit_with_draft
         login(api_client, setup["auditor"])
 
         response = api_client.patch(
-            f"/api/findings/{setup['finding'].id}/review", json={"action": "accept"}
+            f"/api/findings/{setup['finding'].id}/review", json={"action": "approve"}
         )
 
-        assert response.status_code == 200, response.text
+        assert response.status_code == 200
         body = response.json()
         assert body["status"] == "approved"
-        assert body["final_status"] == "satisfied"
+        assert body["auditor_decision"] == "PASS"
+        assert body["system_result"] == "PASS"
+        assert body["is_override"] is False
+
+    def test_the_system_result_is_untouched_by_approval(
+        self, db: DBSession, api_client: TestClient, audit_with_draft: dict[str, Any]
+    ) -> None:
+        setup = audit_with_draft
+        before = setup["finding"].evaluation.result
+        login(api_client, setup["auditor"])
+
+        api_client.patch(f"/api/findings/{setup['finding'].id}/review", json={"action": "approve"})
+
+        db.expire_all()
+        assert setup["finding"].evaluation.result == before
+
+    def test_reviewed_by_and_at_are_recorded(
+        self, db: DBSession, api_client: TestClient, audit_with_draft: dict[str, Any]
+    ) -> None:
+        setup = audit_with_draft
+        login(api_client, setup["auditor"])
+
+        body = api_client.patch(
+            f"/api/findings/{setup['finding'].id}/review", json={"action": "approve"}
+        ).json()
+
         assert body["reviewed_by"] == str(setup["auditor"].id)
         assert body["reviewed_at"] is not None
-        assert body["is_ai_draft"] is False
 
-    def test_accepting_clears_the_manual_review_flag(
-        self, api_client: TestClient, make_user: Any, make_engagement: Any, make_finding: Any
+
+class TestOverride:
+    """An auditor disagreeing with the machine is always permitted, always
+    logged, and never destructive (01_REQUIREMENTS.md § Finding Review)."""
+
+    def test_a_differing_decision_is_allowed_and_flagged(
+        self, db: DBSession, api_client: TestClient, audit_with_draft: dict[str, Any]
     ) -> None:
-        """The flag means "a human still needs to look at this". Once one has,
-        leaving it set would keep the item in the attention queue forever."""
-        auditor = make_user(Role.auditor, password=PASSWORD)
-        engagement = make_engagement(auditor, status=EngagementStatus.in_progress)
-        finding = make_finding(engagement, needs_manual_review=True, ai_confidence=0.4)
-        login(api_client, auditor)
-
-        response = api_client.patch(f"/api/findings/{finding.id}/review", json={"action": "accept"})
-
-        assert response.status_code == 200
-        assert response.json()["needs_manual_review"] is False
-
-    def test_accept_is_refused_when_there_is_no_ai_suggestion(
-        self, api_client: TestClient, make_user: Any, make_engagement: Any, make_finding: Any
-    ) -> None:
-        """When the LLM failed, the Finding exists with a null suggestion.
-        "Accepting" nothing is not a determination — the human must supply the
-        status via `edit`, which is what makes the approval meaningful."""
-        auditor = make_user(Role.auditor, password=PASSWORD)
-        engagement = make_engagement(auditor, status=EngagementStatus.in_progress)
-        finding = make_finding(
-            engagement,
-            ai_suggested_status=None,
-            ai_confidence=None,
-            needs_manual_review=True,
-        )
-        login(api_client, auditor)
-
-        response = api_client.patch(f"/api/findings/{finding.id}/review", json={"action": "accept"})
-
-        assert response.status_code == 409
-        assert response.json()["error"]["code"] == "NO_AI_SUGGESTION"
-
-
-class TestEditPath:
-    def test_edit_approves_with_the_human_value(
-        self, api_client: TestClient, engagement_with_draft: dict[str, Any]
-    ) -> None:
-        """01_REQUIREMENTS.md: "final_status = edited_status (human value
-        overrides AI value)"."""
-        setup = engagement_with_draft
+        setup = audit_with_draft
         login(api_client, setup["auditor"])
 
-        response = api_client.patch(
+        body = api_client.patch(
             f"/api/findings/{setup['finding'].id}/review",
-            json={"action": "edit", "edited_status": "partial", "note": "Only covers scope A."},
-        )
+            json={
+                "action": "approve",
+                "auditor_decision": "FAIL",
+                "note": "The export predates the change that introduced the gap.",
+            },
+        ).json()
 
-        assert response.status_code == 200
-        body = response.json()
-        assert body["status"] == "approved"
-        assert body["final_status"] == "partial"
-        assert body["review_note"] == "Only covers scope A."
+        assert body["auditor_decision"] == "FAIL"
+        assert body["system_result"] == "PASS"
+        assert body["is_override"] is True
 
-    def test_edit_retains_the_original_ai_suggestion(
-        self, api_client: TestClient, db: DBSession, engagement_with_draft: dict[str, Any]
+    def test_an_override_still_leaves_the_evaluation_intact(
+        self, db: DBSession, api_client: TestClient, audit_with_draft: dict[str, Any]
     ) -> None:
-        """01_REQUIREMENTS.md: "original AI suggestion retained for audit trail
-        (never overwritten)". This is what makes measuring AI quality over time
-        possible at all."""
-        setup = engagement_with_draft
+        """The whole point of two columns: the machine's answer survives the
+        human's disagreement, so the disagreement stays measurable."""
+        setup = audit_with_draft
+        evaluation_id = setup["finding"].control_evaluation_id
         login(api_client, setup["auditor"])
 
         api_client.patch(
             f"/api/findings/{setup['finding'].id}/review",
-            json={"action": "edit", "edited_status": "not_satisfied"},
+            json={"action": "approve", "auditor_decision": "FAIL", "note": "Disagree."},
         )
 
-        db.refresh(setup["finding"])
-        assert setup["finding"].ai_suggested_status == ComplianceStatus.satisfied
-        assert setup["finding"].final_status == ComplianceStatus.not_satisfied
-        assert setup["finding"].ai_confidence == 0.85
+        db.expire_all()
+        assert setup["finding"].control_evaluation_id == evaluation_id
+        assert setup["finding"].evaluation.result == EvaluationResult.PASS
 
-    def test_edit_without_edited_status_is_rejected(
-        self, api_client: TestClient, db: DBSession, engagement_with_draft: dict[str, Any]
+    def test_an_override_requires_a_note(
+        self, api_client: TestClient, audit_with_draft: dict[str, Any]
     ) -> None:
-        """01_REQUIREMENTS.md Failure Cases: edit without edited_status → 400."""
-        setup = engagement_with_draft
+        """Departing from the mechanical result has to be explainable, or the
+        override is not reviewable later."""
+        setup = audit_with_draft
         login(api_client, setup["auditor"])
 
         response = api_client.patch(
-            f"/api/findings/{setup['finding'].id}/review", json={"action": "edit"}
+            f"/api/findings/{setup['finding'].id}/review",
+            json={"action": "approve", "auditor_decision": "FAIL"},
         )
 
         assert response.status_code == 400
         assert response.json()["error"]["code"] == "VALIDATION_ERROR"
 
-        db.refresh(setup["finding"])
-        assert setup["finding"].status == FindingStatus.draft
-
-    def test_edited_status_must_be_a_known_value(
-        self, api_client: TestClient, engagement_with_draft: dict[str, Any]
+    def test_agreeing_needs_no_note(
+        self, api_client: TestClient, audit_with_draft: dict[str, Any]
     ) -> None:
-        """01_REQUIREMENTS.md Validation Rules: edited_status must be one of the
-        same enum values the AI could suggest."""
-        setup = engagement_with_draft
+        setup = audit_with_draft
         login(api_client, setup["auditor"])
-
         response = api_client.patch(
             f"/api/findings/{setup['finding'].id}/review",
-            json={"action": "edit", "edited_status": "definitely_compliant"},
+            json={"action": "approve", "auditor_decision": "PASS"},
         )
-
-        assert response.status_code == 400
-
-
-class TestRejectPath:
-    def test_reject_sets_rejected_and_records_the_note(
-        self, api_client: TestClient, engagement_with_draft: dict[str, Any]
-    ) -> None:
-        setup = engagement_with_draft
-        login(api_client, setup["auditor"])
-
-        response = api_client.patch(
-            f"/api/findings/{setup['finding'].id}/review",
-            json={"action": "reject", "note": "Evidence is for a different system."},
-        )
-
         assert response.status_code == 200
-        body = response.json()
-        assert body["status"] == "rejected"
-        assert body["final_status"] is None
-        assert body["review_note"] == "Evidence is for a different system."
 
-    def test_reject_without_a_note_is_rejected_and_leaves_the_finding_draft(
-        self, api_client: TestClient, db: DBSession, engagement_with_draft: dict[str, Any]
+    def test_the_override_is_recorded_in_history_with_both_values(
+        self, db: DBSession, api_client: TestClient, audit_with_draft: dict[str, Any]
     ) -> None:
-        """01_REQUIREMENTS.md acceptance criterion: "Given a draft Finding, when
-        a Reviewer rejects it without a note, the response is 400 and the
-        Finding remains draft." A rejection must be explainable."""
-        setup = engagement_with_draft
-        login(api_client, setup["reviewer"])
+        setup = audit_with_draft
+        login(api_client, setup["auditor"])
+        api_client.patch(
+            f"/api/findings/{setup['finding'].id}/review",
+            json={"action": "approve", "auditor_decision": "FAIL", "note": "Disagree."},
+        )
+
+        entry = db.scalars(
+            select(FindingHistory).where(FindingHistory.finding_id == setup["finding"].id)
+        ).one()
+
+        assert entry.new_decision == EvaluationResult.FAIL
+        # What the machine said at the moment of the decision, copied onto the
+        # history row so the disagreement is legible without a re-join.
+        assert entry.system_result == EvaluationResult.PASS
+
+
+class TestRejectAndRequestMoreEvidence:
+    def test_reject_records_the_note(
+        self, api_client: TestClient, audit_with_draft: dict[str, Any]
+    ) -> None:
+        setup = audit_with_draft
+        login(api_client, setup["auditor"])
+
+        body = api_client.patch(
+            f"/api/findings/{setup['finding'].id}/review",
+            json={"action": "reject", "note": "The cited export is for the wrong environment."},
+        ).json()
+
+        assert body["status"] == "rejected"
+        assert body["review_note"] == "The cited export is for the wrong environment."
+
+    def test_reject_without_a_note_is_refused(
+        self, db: DBSession, api_client: TestClient, audit_with_draft: dict[str, Any]
+    ) -> None:
+        setup = audit_with_draft
+        login(api_client, setup["auditor"])
 
         response = api_client.patch(
             f"/api/findings/{setup['finding'].id}/review", json={"action": "reject"}
         )
 
         assert response.status_code == 400
-        db.refresh(setup["finding"])
-        assert setup["finding"].status == FindingStatus.draft
+        db.expire_all()
+        assert setup["finding"].status == FindingStatus.pending_review
 
     def test_a_whitespace_only_note_does_not_count(
-        self, api_client: TestClient, engagement_with_draft: dict[str, Any]
+        self, api_client: TestClient, audit_with_draft: dict[str, Any]
     ) -> None:
-        setup = engagement_with_draft
-        login(api_client, setup["reviewer"])
-
+        setup = audit_with_draft
+        login(api_client, setup["auditor"])
         response = api_client.patch(
             f"/api/findings/{setup['finding'].id}/review",
-            json={"action": "reject", "note": "   \n  "},
+            json={"action": "reject", "note": "   "},
         )
+        assert response.status_code == 400
 
+    def test_request_more_evidence_sets_its_own_status(
+        self, api_client: TestClient, audit_with_draft: dict[str, Any]
+    ) -> None:
+        """01_REQUIREMENTS.md: this routes back into the evidence pipeline
+        rather than closing the item."""
+        setup = audit_with_draft
+        login(api_client, setup["auditor"])
+
+        body = api_client.patch(
+            f"/api/findings/{setup['finding'].id}/review",
+            json={"action": "request_more_evidence", "note": "Need the production export."},
+        ).json()
+
+        assert body["status"] == "needs_more_evidence"
+
+    def test_request_more_evidence_requires_a_note(
+        self, api_client: TestClient, audit_with_draft: dict[str, Any]
+    ) -> None:
+        setup = audit_with_draft
+        login(api_client, setup["auditor"])
+        response = api_client.patch(
+            f"/api/findings/{setup['finding'].id}/review",
+            json={"action": "request_more_evidence"},
+        )
         assert response.status_code == 400
 
     def test_rejected_findings_are_never_deleted(
-        self, api_client: TestClient, db: DBSession, engagement_with_draft: dict[str, Any]
+        self, db: DBSession, api_client: TestClient, audit_with_draft: dict[str, Any]
     ) -> None:
-        """03_DATA_MODEL.md Deletion Strategy: never deleted, including rejected
-        Findings — the record of what the AI proposed and why a human
-        disagreed."""
-        setup = engagement_with_draft
+        setup = audit_with_draft
         login(api_client, setup["auditor"])
         api_client.patch(
             f"/api/findings/{setup['finding'].id}/review",
-            json={"action": "reject", "note": "Not applicable to this environment."},
+            json={"action": "reject", "note": "Wrong environment."},
         )
 
-        db.refresh(setup["finding"])
+        db.expire_all()
         assert setup["finding"].id is not None
-        assert setup["finding"].ai_rationale is not None
+        assert setup["finding"].status == FindingStatus.rejected
 
 
-class TestReviewerOverride:
-    def test_reviewer_overrides_an_auditor_accept_and_both_appear_in_history(
-        self, api_client: TestClient, db: DBSession, engagement_with_draft: dict[str, Any]
+class TestReviewerOverridesAuditor:
+    def test_reviewer_may_revisit_an_auditors_decision(
+        self, db: DBSession, api_client: TestClient, audit_with_draft: dict[str, Any]
     ) -> None:
-        """01_REQUIREMENTS.md acceptance criterion: "Given an Auditor accepts a
-        Finding, when a Reviewer later edits the same Finding, the final state
-        reflects the Reviewer's edit and both actions appear in the Finding's
-        history"."""
-        setup = engagement_with_draft
-        finding_id = setup["finding"].id
+        setup = audit_with_draft
 
         login(api_client, setup["auditor"])
-        accepted = api_client.patch(f"/api/findings/{finding_id}/review", json={"action": "accept"})
-        assert accepted.status_code == 200
-        assert accepted.json()["final_status"] == "satisfied"
+        api_client.patch(f"/api/findings/{setup['finding'].id}/review", json={"action": "approve"})
 
         login(api_client, setup["reviewer"])
-        overridden = api_client.patch(
-            f"/api/findings/{finding_id}/review",
+        response = api_client.patch(
+            f"/api/findings/{setup['finding'].id}/review",
             json={
-                "action": "edit",
-                "edited_status": "not_satisfied",
-                "note": "The config shown predates the assessment period.",
+                "action": "approve",
+                "auditor_decision": "FAIL",
+                "note": "Reviewed with the client; the control is not in place.",
             },
         )
 
-        assert overridden.status_code == 200
-        assert overridden.json()["final_status"] == "not_satisfied"
-        assert overridden.json()["reviewed_by"] == str(setup["reviewer"].id)
+        assert response.status_code == 200
+        assert response.json()["auditor_decision"] == "FAIL"
 
-        history = db.scalars(
+        entries = db.scalars(
             select(FindingHistory)
-            .where(FindingHistory.finding_id == finding_id)
+            .where(FindingHistory.finding_id == setup["finding"].id)
             .order_by(FindingHistory.created_at)
         ).all()
-
-        assert len(history) == 2, "both decisions must be retained, not overwritten"
-
-        first, second = history
-        assert first.actor_id == setup["auditor"].id
-        assert first.action == FindingAction.accept
-        assert first.previous_status == FindingStatus.draft
-        assert first.new_status == FindingStatus.approved
-        assert first.new_final_status == ComplianceStatus.satisfied
-
-        # The second entry is logged as an override, not as a plain edit, and it
-        # records what it replaced — otherwise the history would say a change
-        # happened without saying what changed.
-        assert second.actor_id == setup["reviewer"].id
-        assert second.action == FindingAction.override
-        assert second.previous_status == FindingStatus.approved
-        assert second.previous_final_status == ComplianceStatus.satisfied
-        assert second.new_final_status == ComplianceStatus.not_satisfied
-        assert second.note == "The config shown predates the assessment period."
-
-    def test_history_is_exposed_through_the_api(
-        self, api_client: TestClient, engagement_with_draft: dict[str, Any]
-    ) -> None:
-        setup = engagement_with_draft
-        login(api_client, setup["auditor"])
-        api_client.patch(f"/api/findings/{setup['finding'].id}/review", json={"action": "accept"})
-        login(api_client, setup["reviewer"])
-        api_client.patch(
-            f"/api/findings/{setup['finding'].id}/review",
-            json={"action": "reject", "note": "Superseded."},
-        )
-
-        history = api_client.get(f"/api/findings/{setup['finding'].id}/history").json()
-
-        assert [h["action"] for h in history] == ["accept", "override"]
+        assert [e.action.value for e in entries] == ["approve", "override"]
 
     def test_an_auditor_cannot_override_an_already_reviewed_finding(
-        self,
-        api_client: TestClient,
-        db: DBSession,
-        make_user: Any,
-        engagement_with_draft: dict[str, Any],
+        self, api_client: TestClient, audit_with_draft: dict[str, Any]
     ) -> None:
-        """01_REQUIREMENTS.md § Authorization Rules gives override authority to
-        Reviewers only. Without this, two Auditors could flip a determination
-        back and forth with no senior involvement, and the last write would
-        silently win."""
-        setup = engagement_with_draft
-        second_auditor = make_user(Role.auditor, password=PASSWORD)
-        db.add(
-            EngagementAssignment(engagement_id=setup["engagement"].id, user_id=second_auditor.id)
-        )
-        db.flush()
-
+        setup = audit_with_draft
         login(api_client, setup["auditor"])
-        api_client.patch(f"/api/findings/{setup['finding'].id}/review", json={"action": "accept"})
-
-        login(api_client, second_auditor)
-        response = api_client.patch(
-            f"/api/findings/{setup['finding'].id}/review",
-            json={"action": "edit", "edited_status": "not_satisfied"},
-        )
-
-        assert response.status_code == 403
-        db.refresh(setup["finding"])
-        assert setup["finding"].final_status == ComplianceStatus.satisfied
-        assert setup["finding"].reviewed_by == setup["auditor"].id
-
-    def test_an_auditor_cannot_reopen_their_own_prior_decision(
-        self, api_client: TestClient, engagement_with_draft: dict[str, Any]
-    ) -> None:
-        """Same rule, applied to the author of the original decision — a
-        self-revision is still a change to a determination that has been made."""
-        setup = engagement_with_draft
-        login(api_client, setup["auditor"])
-        api_client.patch(f"/api/findings/{setup['finding'].id}/review", json={"action": "accept"})
+        api_client.patch(f"/api/findings/{setup['finding'].id}/review", json={"action": "approve"})
 
         response = api_client.patch(
             f"/api/findings/{setup['finding'].id}/review",
@@ -374,258 +333,236 @@ class TestReviewerOverride:
 
         assert response.status_code == 403
 
-    def test_reviewer_can_override_a_rejection_back_to_approved(
-        self, api_client: TestClient, db: DBSession, engagement_with_draft: dict[str, Any]
+    def test_reviewer_can_move_a_rejection_back_to_approved(
+        self, api_client: TestClient, audit_with_draft: dict[str, Any]
     ) -> None:
-        setup = engagement_with_draft
+        setup = audit_with_draft
         login(api_client, setup["auditor"])
         api_client.patch(
             f"/api/findings/{setup['finding'].id}/review",
-            json={"action": "reject", "note": "Insufficient."},
+            json={"action": "reject", "note": "Looked wrong."},
         )
 
         login(api_client, setup["reviewer"])
         response = api_client.patch(
             f"/api/findings/{setup['finding'].id}/review",
-            json={"action": "edit", "edited_status": "partial", "note": "Partially covers it."},
+            json={"action": "approve", "note": "Re-examined; the evidence does support it."},
         )
 
         assert response.status_code == 200
         assert response.json()["status"] == "approved"
-        history = db.scalars(
-            select(FindingHistory).where(FindingHistory.finding_id == setup["finding"].id)
-        ).all()
-        assert len(history) == 2
+
+    def test_history_is_exposed_through_the_api(
+        self, api_client: TestClient, audit_with_draft: dict[str, Any]
+    ) -> None:
+        setup = audit_with_draft
+        login(api_client, setup["auditor"])
+        api_client.patch(f"/api/findings/{setup['finding'].id}/review", json={"action": "approve"})
+
+        history = api_client.get(f"/api/findings/{setup['finding'].id}/history").json()
+
+        assert len(history) == 1
+        assert history[0]["new_status"] == "approved"
+        assert history[0]["system_result"] == "PASS"
 
 
 class TestApprovalRequiresAReviewer:
-    """ADR-003, and 08_TESTING.md's requirement-to-test map: "No Finding
-    approved without reviewed_by — unit test on the service layer directly +
-    integration test via API"."""
+    """08_TESTING.md § Security Tests: attempted via a direct service-layer
+    call, not only through the API, to catch any bypass path."""
 
     def test_service_layer_always_sets_reviewed_by_from_the_actor(
-        self, db: DBSession, engagement_with_draft: dict[str, Any]
+        self, db: DBSession, audit_with_draft: dict[str, Any]
     ) -> None:
-        """Called directly, bypassing the route entirely."""
-        setup = engagement_with_draft
+        setup = audit_with_draft
         service = FindingService(db)
 
         finding = service.review(
-            setup["finding"].id, actor_for(setup["auditor"]), action=FindingAction.accept
+            setup["finding"].id, actor_for(setup["auditor"]), action=FindingAction.approve
         )
 
-        assert finding.status == FindingStatus.approved
         assert finding.reviewed_by == setup["auditor"].id
-        assert finding.final_status is not None
+        assert finding.status == FindingStatus.approved
 
     def test_reviewed_by_is_never_taken_from_the_request_body(
-        self,
-        api_client: TestClient,
-        db: DBSession,
-        make_user: Any,
-        engagement_with_draft: dict[str, Any],
+        self, db: DBSession, api_client: TestClient, audit_with_draft: dict[str, Any]
     ) -> None:
-        """04_API_CONTRACT.md Security Notes: "reviewed_by is always set
-        server-side from the authenticated session — never accepted from the
-        request body". The schema has no such field, so a supplied one is
-        dropped; this test exists to catch a future edit that adds it."""
-        setup = engagement_with_draft
-        someone_else = make_user(Role.reviewer, password=PASSWORD)
+        setup = audit_with_draft
+        login(api_client, setup["auditor"])
+
+        api_client.patch(
+            f"/api/findings/{setup['finding'].id}/review",
+            json={"action": "approve", "reviewed_by": str(setup["reviewer"].id)},
+        )
+
+        db.expire_all()
+        assert setup["finding"].reviewed_by == setup["auditor"].id
+
+    def test_a_request_body_cannot_set_the_system_result(
+        self, db: DBSession, api_client: TestClient, audit_with_draft: dict[str, Any]
+    ) -> None:
+        """05_SECURITY.md §10.3: `ControlEvaluation.result` has no API write
+        path under any role. The field name is not in the review schema at all,
+        so an attempt to send it is silently ignored rather than honoured."""
+        setup = audit_with_draft
+        login(api_client, setup["auditor"])
+
+        api_client.patch(
+            f"/api/findings/{setup['finding'].id}/review",
+            json={"action": "approve", "system_result": "FAIL", "result": "FAIL"},
+        )
+
+        db.expire_all()
+        assert setup["finding"].evaluation.result == EvaluationResult.PASS
+
+    def test_override_is_not_an_accepted_client_action(
+        self, api_client: TestClient, audit_with_draft: dict[str, Any]
+    ) -> None:
+        """`override` is derived server-side from prior state. Accepting it as
+        input would let a caller mislabel its own action in the audit trail."""
+        setup = audit_with_draft
         login(api_client, setup["auditor"])
 
         response = api_client.patch(
             f"/api/findings/{setup['finding'].id}/review",
-            json={
-                "action": "accept",
-                "reviewed_by": str(someone_else.id),
-                "status": "approved",
-                "final_status": "not_applicable",
-            },
-        )
-
-        assert response.status_code == 200
-        db.refresh(setup["finding"])
-        assert setup["finding"].reviewed_by == setup["auditor"].id
-        assert setup["finding"].final_status == ComplianceStatus.satisfied
-
-    def test_override_is_not_an_accepted_client_action(
-        self, api_client: TestClient, engagement_with_draft: dict[str, Any]
-    ) -> None:
-        """`override` is derived server-side from the finding's prior state.
-        Accepting it as input would let a caller mislabel its own action in the
-        audit trail — recording an override where none happened, or a plain
-        edit where one did."""
-        setup = engagement_with_draft
-        login(api_client, setup["reviewer"])
-
-        response = api_client.patch(
-            f"/api/findings/{setup['finding'].id}/review",
-            json={"action": "override", "edited_status": "satisfied"},
+            json={"action": "override", "auditor_decision": "FAIL", "note": "x"},
         )
 
         assert response.status_code == 400
 
     def test_direct_service_call_with_override_action_is_refused(
-        self, db: DBSession, engagement_with_draft: dict[str, Any]
+        self, db: DBSession, audit_with_draft: dict[str, Any]
     ) -> None:
-        setup = engagement_with_draft
-        service = FindingService(db)
-
+        setup = audit_with_draft
         with pytest.raises(ValidationError):
-            service.review(
+            FindingService(db).review(
                 setup["finding"].id,
                 actor_for(setup["reviewer"]),
                 action=FindingAction.override,
-                edited_status=ComplianceStatus.satisfied,
+                note="x",
             )
 
     def test_history_row_is_written_with_every_approval(
-        self, db: DBSession, engagement_with_draft: dict[str, Any]
+        self, db: DBSession, audit_with_draft: dict[str, Any]
     ) -> None:
-        """03_DATA_MODEL.md §8.3: the Finding transition and its history row are
-        written in a single transaction — never one without the other."""
-        setup = engagement_with_draft
-        service = FindingService(db)
-
-        service.review(
-            setup["finding"].id, actor_for(setup["reviewer"]), action=FindingAction.accept
+        setup = audit_with_draft
+        FindingService(db).review(
+            setup["finding"].id, actor_for(setup["auditor"]), action=FindingAction.approve
         )
 
-        history = db.scalars(
+        entries = db.scalars(
             select(FindingHistory).where(FindingHistory.finding_id == setup["finding"].id)
         ).all()
-        assert len(history) == 1
-        assert history[0].actor_id == setup["reviewer"].id
+        assert len(entries) == 1
+        assert entries[0].actor_id == setup["auditor"].id
 
 
 class TestReviewAuthorization:
     def test_unassigned_auditor_cannot_review(
-        self, api_client: TestClient, make_user: Any, engagement_with_draft: dict[str, Any]
+        self, api_client: TestClient, make_user: Any, audit_with_draft: dict[str, Any]
     ) -> None:
-        """01_REQUIREMENTS.md: "Auditors can only act on Findings within
-        engagements they're assigned to"."""
-        setup = engagement_with_draft
-        intruder = make_user(Role.auditor, password=PASSWORD)
-        login(api_client, intruder)
+        outsider = make_user(Role.auditor, password=PASSWORD)
+        login(api_client, outsider)
 
         response = api_client.patch(
-            f"/api/findings/{setup['finding'].id}/review", json={"action": "accept"}
+            f"/api/findings/{audit_with_draft['finding'].id}/review", json={"action": "approve"}
         )
 
         assert response.status_code == 403
 
     def test_unassigned_auditor_cannot_read_the_finding_or_its_history(
-        self, api_client: TestClient, make_user: Any, engagement_with_draft: dict[str, Any]
+        self, api_client: TestClient, make_user: Any, audit_with_draft: dict[str, Any]
     ) -> None:
-        setup = engagement_with_draft
-        intruder = make_user(Role.auditor, password=PASSWORD)
-        login(api_client, intruder)
+        outsider = make_user(Role.auditor, password=PASSWORD)
+        login(api_client, outsider)
+        finding_id = audit_with_draft["finding"].id
 
-        assert api_client.get(f"/api/findings/{setup['finding'].id}").status_code == 403
-        assert api_client.get(f"/api/findings/{setup['finding'].id}/history").status_code == 403
-        assert (
-            api_client.get(f"/api/engagements/{setup['engagement'].id}/findings").status_code == 403
-        )
+        assert api_client.get(f"/api/findings/{finding_id}").status_code == 403
+        assert api_client.get(f"/api/findings/{finding_id}/history").status_code == 403
 
     def test_unauthenticated_review_is_rejected(
-        self, api_client: TestClient, engagement_with_draft: dict[str, Any]
+        self, api_client: TestClient, audit_with_draft: dict[str, Any]
     ) -> None:
         response = api_client.patch(
-            f"/api/findings/{engagement_with_draft['finding'].id}/review",
-            json={"action": "accept"},
+            f"/api/findings/{audit_with_draft['finding'].id}/review", json={"action": "approve"}
         )
         assert response.status_code == 401
 
     def test_unknown_finding_returns_404(self, api_client: TestClient, make_user: Any) -> None:
-        auditor = make_user(Role.auditor, password=PASSWORD)
-        login(api_client, auditor)
-
-        response = api_client.patch(
-            f"/api/findings/{uuid.uuid4()}/review", json={"action": "accept"}
-        )
-
+        login(api_client, make_user(Role.auditor, password=PASSWORD))
+        response = api_client.get(f"/api/findings/{uuid.uuid4()}")
         assert response.status_code == 404
 
-    def test_reviewer_may_act_on_any_engagement(
-        self, api_client: TestClient, make_user: Any, make_engagement: Any, make_finding: Any
+    def test_reviewer_may_act_on_any_audit(
+        self, api_client: TestClient, make_user: Any, audit_with_draft: dict[str, Any]
     ) -> None:
-        """Reviewers can act on any Finding at the firm, assigned or not."""
-        auditor = make_user(Role.auditor, password=PASSWORD)
-        reviewer = make_user(Role.reviewer, password=PASSWORD)
-        engagement = make_engagement(auditor, status=EngagementStatus.in_progress)
-        finding = make_finding(engagement)
-        login(api_client, reviewer)
+        unassigned_reviewer = make_user(Role.reviewer, password=PASSWORD)
+        login(api_client, unassigned_reviewer)
 
-        response = api_client.patch(f"/api/findings/{finding.id}/review", json={"action": "accept"})
+        response = api_client.patch(
+            f"/api/findings/{audit_with_draft['finding'].id}/review", json={"action": "approve"}
+        )
 
         assert response.status_code == 200
 
 
 class TestReviewQueue:
-    def test_queue_distinguishes_drafts_from_determinations(
-        self, api_client: TestClient, make_user: Any, make_engagement: Any, make_finding: Any
+    def test_the_queue_separates_machine_and_human_fields(
+        self, api_client: TestClient, audit_with_draft: dict[str, Any]
     ) -> None:
-        """04_API_CONTRACT.md Security Notes: "the API response schema itself
-        (not just the UI) should make it impossible to mistake a draft AI
-        suggestion for a final determination"."""
+        """04_API_CONTRACT.md, Security Notes: the separation is a contract
+        guarantee, so a client cannot receive them pre-merged."""
+        setup = audit_with_draft
+        login(api_client, setup["auditor"])
+
+        row = api_client.get(f"/api/audits/{setup['audit'].id}/findings").json()[0]
+
+        assert row["system_result"] == "PASS"
+        assert row["auditor_decision"] is None
+        assert row["awaiting_review"] is True
+        assert row["llm_involved"] is False
+
+    def test_a_gate_rejected_finding_is_explicitly_flagged(
+        self,
+        db: DBSession,
+        api_client: TestClient,
+        make_user: Any,
+        make_audit: Any,
+        make_finding: Any,
+    ) -> None:
+        """01_REQUIREMENTS.md § Finding Review, Edge Cases: a result the gate
+        could not verify must never look the same as one it could."""
         auditor = make_user(Role.auditor, password=PASSWORD)
-        reviewer = make_user(Role.reviewer, password=PASSWORD)
-        engagement = make_engagement(auditor, status=EngagementStatus.in_progress)
-        make_finding(engagement, status=FindingStatus.draft)
-        make_finding(
-            engagement,
-            status=FindingStatus.approved,
-            reviewed_by=reviewer,
-            final_status=ComplianceStatus.partial,
-        )
+        audit = make_audit(auditor, status=AuditStatus.in_progress)
+        make_finding(audit, gate_status=GateStatus.REJECTED)
         login(api_client, auditor)
 
-        items = api_client.get(f"/api/engagements/{engagement.id}/findings").json()
+        row = api_client.get(f"/api/audits/{audit.id}/findings").json()[0]
 
-        drafts = [f for f in items if f["is_ai_draft"]]
-        determined = [f for f in items if not f["is_ai_draft"]]
-        assert len(drafts) == 1
-        assert len(determined) == 1
-        # A draft carries an AI suggestion but no determination and no reviewer.
-        assert drafts[0]["ai_suggested_status"] is not None
-        assert drafts[0]["final_status"] is None
-        assert drafts[0]["reviewed_by"] is None
-        # A determination carries both, in separate fields that are never merged.
-        assert determined[0]["final_status"] == "partial"
-        assert determined[0]["reviewed_by"] is not None
+        assert row["gate_status"] == "REJECTED"
+        assert row["unverified_by_gate"] is True
 
     def test_status_filter_applies(
-        self, api_client: TestClient, make_user: Any, make_engagement: Any, make_finding: Any
+        self,
+        db: DBSession,
+        api_client: TestClient,
+        make_user: Any,
+        make_audit: Any,
+        make_finding: Any,
     ) -> None:
         auditor = make_user(Role.auditor, password=PASSWORD)
-        reviewer = make_user(Role.reviewer, password=PASSWORD)
-        engagement = make_engagement(auditor, status=EngagementStatus.in_progress)
-        make_finding(engagement, status=FindingStatus.draft)
+        audit = make_audit(auditor, status=AuditStatus.in_progress)
+        make_finding(audit, status=FindingStatus.pending_review)
         make_finding(
-            engagement,
+            audit,
             status=FindingStatus.approved,
-            reviewed_by=reviewer,
-            final_status=ComplianceStatus.satisfied,
+            auditor_decision=EvaluationResult.PASS,
+            reviewed_by=auditor,
         )
         login(api_client, auditor)
 
-        drafts = api_client.get(f"/api/engagements/{engagement.id}/findings?status=draft").json()
-
-        assert len(drafts) == 1
-        assert drafts[0]["status"] == "draft"
-
-    def test_needs_manual_review_filter_applies(
-        self, api_client: TestClient, make_user: Any, make_engagement: Any, make_finding: Any
-    ) -> None:
-        auditor = make_user(Role.auditor, password=PASSWORD)
-        engagement = make_engagement(auditor, status=EngagementStatus.in_progress)
-        make_finding(engagement, needs_manual_review=True, ai_confidence=0.4)
-        make_finding(engagement, needs_manual_review=False, ai_confidence=0.9)
-        login(api_client, auditor)
-
-        flagged = api_client.get(
-            f"/api/engagements/{engagement.id}/findings?needs_manual_review=true"
+        pending = api_client.get(
+            f"/api/audits/{audit.id}/findings", params={"status": "pending_review"}
         ).json()
 
-        assert len(flagged) == 1
-        assert flagged[0]["ai_confidence"] == 0.4
+        assert len(pending) == 1
+        assert pending[0]["status"] == "pending_review"

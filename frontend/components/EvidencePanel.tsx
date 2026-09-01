@@ -11,7 +11,7 @@ import type {
 } from "@/types/api";
 
 interface Props {
-  engagementId: string;
+  auditId: string;
   documents: EvidenceDocumentSummary[];
   requests: EvidenceRequest[];
   readOnly: boolean;
@@ -23,7 +23,7 @@ interface Props {
 const ACCEPT = ".pdf,.docx,.xlsx,.png,.jpg,.jpeg";
 const MAX_MB = 25;
 
-export function EvidencePanel({ engagementId, documents, requests, readOnly }: Props) {
+export function EvidencePanel({ auditId, documents, requests, readOnly }: Props) {
   const router = useRouter();
   const [refreshing, startTransition] = useTransition();
   const [uploading, setUploading] = useState(false);
@@ -65,7 +65,7 @@ export function EvidencePanel({ engagementId, documents, requests, readOnly }: P
     if (linkTo) form.append("evidence_request_id", linkTo);
 
     try {
-      await api.upload(`/api/engagements/${engagementId}/evidence-documents`, form);
+      await api.upload(`/api/audits/${auditId}/evidence-documents`, form);
       if (fileInput.current) fileInput.current.value = "";
       setLinkTo("");
       startTransition(() => router.refresh());
@@ -130,7 +130,7 @@ export function EvidencePanel({ engagementId, documents, requests, readOnly }: P
                       <span>
                         against{" "}
                         <span className="clause">
-                          {requests.find((r) => r.id === doc.evidence_request_id)?.clause_id ??
+                          {requests.find((r) => r.id === doc.evidence_request_id)?.control_id ??
                             "a request"}
                         </span>
                       </span>
@@ -156,7 +156,7 @@ export function EvidencePanel({ engagementId, documents, requests, readOnly }: P
                   <div className="note doc-note">
                     <span className="small">
                       Read successfully, but nothing in it matched the confirmed scope.
-                      Check whether it belongs to this engagement, or whether the scope
+                      Check whether it belongs to this audit, or whether the scope
                       is missing a clause.
                     </span>
                   </div>
@@ -211,7 +211,7 @@ export function EvidencePanel({ engagementId, documents, requests, readOnly }: P
                   <option value="">No specific request</option>
                   {openRequests.map((r) => (
                     <option key={r.id} value={r.id}>
-                      {r.clause_id}
+                      {r.control_id}
                     </option>
                   ))}
                 </select>

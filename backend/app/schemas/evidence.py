@@ -22,7 +22,7 @@ class EvidenceDocumentSummary(ORMModel):
     """
 
     id: uuid.UUID
-    engagement_id: uuid.UUID
+    audit_id: uuid.UUID
     evidence_request_id: uuid.UUID | None
     original_filename: str
     content_hash: str

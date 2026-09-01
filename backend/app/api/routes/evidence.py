@@ -39,12 +39,12 @@ DocumentService = Annotated[EvidenceService, Depends(get_evidence_service)]
 
 
 @router.post(
-    "/api/engagements/{engagement_id}/evidence-requests/generate",
+    "/api/audits/{audit_id}/evidence-requests/generate",
     response_model=EvidenceRequestGenerateResponse,
     responses={409: {"model": ErrorResponse, "description": "NO_CONFIRMED_SCOPE"}},
 )
 def generate_evidence_requests(
-    engagement_id: uuid.UUID,
+    audit_id: uuid.UUID,
     actor: CurrentActor,
     service: RequestService,
     db: Annotated[DBSession, Depends(get_db)],
@@ -54,13 +54,12 @@ def generate_evidence_requests(
     04_API_CONTRACT.md, Side Effects: "Creates EvidenceRequest rows,
     status=draft. Never sends anything externally." (ADR-004.)
     """
-    result = service.generate(engagement_id, actor)
+    result = service.generate(audit_id, actor)
     db.commit()
     clause_ids = service.clause_ids_for(result.created)
     return EvidenceRequestGenerateResponse(
         created=[
-            EvidenceRequestResponse.of(r, clause_ids[r.scoped_requirement_id])
-            for r in result.created
+            EvidenceRequestResponse.of(r, clause_ids[r.scoped_control_id]) for r in result.created
         ],
         skipped_already_requested=result.skipped_already_requested,
         llm_available=result.llm_available,
@@ -68,15 +67,15 @@ def generate_evidence_requests(
 
 
 @router.get(
-    "/api/engagements/{engagement_id}/evidence-requests",
+    "/api/audits/{audit_id}/evidence-requests",
     response_model=list[EvidenceRequestResponse],
 )
 def list_evidence_requests(
-    engagement_id: uuid.UUID, actor: CurrentActor, service: RequestService
+    audit_id: uuid.UUID, actor: CurrentActor, service: RequestService
 ) -> list[EvidenceRequestResponse]:
-    requests = service.list_for_engagement(engagement_id, actor)
+    requests = service.list_for_audit(audit_id, actor)
     clause_ids = service.clause_ids_for(requests)
-    return [EvidenceRequestResponse.of(r, clause_ids[r.scoped_requirement_id]) for r in requests]
+    return [EvidenceRequestResponse.of(r, clause_ids[r.scoped_control_id]) for r in requests]
 
 
 @router.patch("/api/evidence-requests/{request_id}", response_model=EvidenceRequestResponse)
@@ -92,7 +91,7 @@ def update_evidence_request(
     )
     db.commit()
     return EvidenceRequestResponse.of(
-        updated, service.clause_ids_for([updated])[updated.scoped_requirement_id]
+        updated, service.clause_ids_for([updated])[updated.scoped_control_id]
     )
 
 
@@ -100,7 +99,7 @@ def update_evidence_request(
 
 
 @router.post(
-    "/api/engagements/{engagement_id}/evidence-documents",
+    "/api/audits/{audit_id}/evidence-documents",
     response_model=EvidenceDocumentSummary,
     status_code=status.HTTP_201_CREATED,
     responses={
@@ -109,7 +108,7 @@ def update_evidence_request(
     },
 )
 def upload_evidence_document(
-    engagement_id: uuid.UUID,
+    audit_id: uuid.UUID,
     actor: CurrentActor,
     service: DocumentService,
     db: Annotated[DBSession, Depends(get_db)],
@@ -123,7 +122,7 @@ def upload_evidence_document(
     reading its magic bytes to identify it.
     """
     document = service.upload(
-        engagement_id,
+        audit_id,
         actor,
         upload=file.file,
         filename=file.filename or "unnamed",
@@ -134,15 +133,14 @@ def upload_evidence_document(
 
 
 @router.get(
-    "/api/engagements/{engagement_id}/evidence-documents",
+    "/api/audits/{audit_id}/evidence-documents",
     response_model=list[EvidenceDocumentSummary],
 )
 def list_evidence_documents(
-    engagement_id: uuid.UUID, actor: CurrentActor, service: DocumentService
+    audit_id: uuid.UUID, actor: CurrentActor, service: DocumentService
 ) -> list[EvidenceDocumentSummary]:
     return [
-        EvidenceDocumentSummary.model_validate(d)
-        for d in service.list_for_engagement(engagement_id, actor)
+        EvidenceDocumentSummary.model_validate(d) for d in service.list_for_audit(audit_id, actor)
     ]
 
 

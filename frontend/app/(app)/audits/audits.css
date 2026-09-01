@@ -10,13 +10,13 @@
   text-underline-offset: 2px;
 }
 
-/* The whole row is the target, not just the text. Auditors open engagements
+/* The whole row is the target, not just the text. Auditors open audits
    dozens of times a day and a 100px link is a needless aim. */
 tbody tr:has(.row-link) {
   cursor: pointer;
 }
 
-/* New-engagement form. Lives here because the form renders on this page. */
+/* New-audit form. Lives here because the form renders on this page. */
 .form-panel {
   max-width: 38rem;
   margin-bottom: 1.25rem;

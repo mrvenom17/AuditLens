@@ -17,17 +17,17 @@ from sqlalchemy.orm import defer
 
 from app.models.enums import ExtractionStatus
 from app.models.evidence import EvidenceChunk, EvidenceDocument
-from app.repositories.base import EngagementScopedRepository
+from app.repositories.base import AuditScopedRepository
 
 if TYPE_CHECKING:
     from app.api.deps import Actor
 
 
-class EvidenceDocumentRepository(EngagementScopedRepository):
+class EvidenceDocumentRepository(AuditScopedRepository):
     def create(
         self,
         *,
-        engagement_id: uuid.UUID,
+        audit_id: uuid.UUID,
         evidence_request_id: uuid.UUID | None,
         original_filename: str,
         content_hash: str,
@@ -37,7 +37,7 @@ class EvidenceDocumentRepository(EngagementScopedRepository):
         uploaded_by: uuid.UUID,
     ) -> EvidenceDocument:
         document = EvidenceDocument(
-            engagement_id=engagement_id,
+            audit_id=audit_id,
             evidence_request_id=evidence_request_id,
             original_filename=original_filename,
             content_hash=content_hash,
@@ -51,15 +51,15 @@ class EvidenceDocumentRepository(EngagementScopedRepository):
         self._db.flush()
         return document
 
-    def list_for_engagement(self, engagement_id: uuid.UUID, actor: Actor) -> list[EvidenceDocument]:
+    def list_for_audit(self, audit_id: uuid.UUID, actor: Actor) -> list[EvidenceDocument]:
         """List view. `extracted_text` is deferred rather than selected and
         discarded: it is Sensitive and can be megabytes per row, so a list of
         sixty documents should not pull all of it out of the database."""
         stmt = self._scoped(
             select(EvidenceDocument)
-            .where(EvidenceDocument.engagement_id == engagement_id)
+            .where(EvidenceDocument.audit_id == audit_id)
             .options(defer(EvidenceDocument.extracted_text)),
-            EvidenceDocument.engagement_id,
+            EvidenceDocument.audit_id,
             actor,
         )
         return list(self._db.scalars(stmt.order_by(EvidenceDocument.created_at.desc())).all())
@@ -67,7 +67,7 @@ class EvidenceDocumentRepository(EngagementScopedRepository):
     def get_scoped(self, document_id: uuid.UUID, actor: Actor) -> EvidenceDocument | None:
         stmt = self._scoped(
             select(EvidenceDocument).where(EvidenceDocument.id == document_id),
-            EvidenceDocument.engagement_id,
+            EvidenceDocument.audit_id,
             actor,
         )
         return self._db.scalar(stmt)
@@ -78,10 +78,8 @@ class EvidenceDocumentRepository(EngagementScopedRepository):
             is not None
         )
 
-    def find_duplicate(
-        self, engagement_id: uuid.UUID, content_hash: str
-    ) -> EvidenceDocument | None:
-        """Whether this exact content is already on this engagement.
+    def find_duplicate(self, audit_id: uuid.UUID, content_hash: str) -> EvidenceDocument | None:
+        """Whether this exact content is already on this audit.
 
         Content-addressed storage means a re-upload costs no extra disk, but
         creating a second EvidenceDocument row would double every Finding
@@ -89,7 +87,7 @@ class EvidenceDocumentRepository(EngagementScopedRepository):
         """
         return self._db.scalar(
             select(EvidenceDocument).where(
-                EvidenceDocument.engagement_id == engagement_id,
+                EvidenceDocument.audit_id == audit_id,
                 EvidenceDocument.content_hash == content_hash,
             )
         )
@@ -165,8 +163,8 @@ class EvidenceDocumentRepository(EngagementScopedRepository):
 
 class EvidenceChunkRepository:
     """Chunks are only ever reached through their parent document, which is
-    itself engagement-scoped, so this repository takes no Actor. The retrieval
-    query below is scoped by an explicit engagement id supplied by the caller."""
+    itself audit-scoped, so this repository takes no Actor. The retrieval
+    query below is scoped by an explicit audit id supplied by the caller."""
 
     def __init__(self, db: DBSession) -> None:
         self._db = db

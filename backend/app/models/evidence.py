@@ -12,7 +12,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.config.settings import settings
 from app.db.base import Base, created_at_column, uuid_pk
-from app.models.enums import ExtractionStatus
+from app.models.enums import ExtractionStatus, MalwareScanStatus
 
 
 class EvidenceDocument(Base):
@@ -33,9 +33,9 @@ class EvidenceDocument(Base):
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
-    engagement_id: Mapped[uuid.UUID] = mapped_column(
+    audit_id: Mapped[uuid.UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("engagements.id", ondelete="RESTRICT"),
+        ForeignKey("audits.id", ondelete="RESTRICT"),
         nullable=False,
         index=True,
     )
@@ -52,6 +52,16 @@ class EvidenceDocument(Base):
     storage_path: Mapped[str] = mapped_column(String(500), nullable=False)
     mime_type: Mapped[str] = mapped_column(String(120), nullable=False)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # 00_PRODUCT.md §5.8 decision for Level 0: recorded, not upload-gating.
+    # `not_scanned` is the honest default until a scanner is wired in — the
+    # field exists so the answer is visible rather than assumed.
+    malware_scan_status: Mapped[MalwareScanStatus] = mapped_column(
+        Enum(MalwareScanStatus, name="malware_scan_status"),
+        nullable=False,
+        default=MalwareScanStatus.not_scanned,
+        server_default="not_scanned",
+    )
 
     extraction_status: Mapped[ExtractionStatus] = mapped_column(
         Enum(ExtractionStatus, name="extraction_status"),
@@ -90,7 +100,7 @@ class EvidenceChunk(Base):
     """A chunk of extracted text with its embedding.
 
     Not named in 03_DATA_MODEL.md, but implied by it: the data model gives
-    PCIRequirement an `embedding` for retrieval, and 01_REQUIREMENTS.md
+    ControlDefinition an `embedding` for retrieval, and 01_REQUIREMENTS.md
     § Evidence-to-Clause Matching rule 1 requires the evidence side to be
     "chunked and embedded" too. Storing chunks rather than one vector per
     document is what makes the citation `location` meaningful — a finding can

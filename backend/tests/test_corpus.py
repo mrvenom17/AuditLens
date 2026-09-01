@@ -17,13 +17,13 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.corpus.loader import CORPUS_FILE, ingest, load_corpus_file
-from app.models.corpus import PCIRequirement
+from app.models.corpus import ControlDefinition
 
 
 class TestCorpusFile:
     def test_file_is_structurally_valid(self) -> None:
         data = load_corpus_file()
-        assert data["corpus_version"] == "v4.0.1-summary"
+        assert data["corpus_version"] == "pci-dss-v4.0.1-poc-2"
         assert len(data["requirements"]) > 0
 
     def test_all_twelve_requirement_families_are_covered(self) -> None:
@@ -36,7 +36,7 @@ class TestCorpusFile:
         text. The version string is the mechanism that keeps that visible in
         every Finding and every Report snapshot."""
         data = load_corpus_file()
-        assert "summary" in data["corpus_version"]
+        assert "pci-dss" in data["corpus_version"]
         assert "copyright" in data["source_note"].lower() or "NOT" in data["source_note"]
 
     def test_corpus_granularity_is_documented(self) -> None:
@@ -48,12 +48,12 @@ class TestCorpusFile:
         silently changing what "scope" means."""
         data = load_corpus_file()
         defined = len(data["requirements"])
-        base = len({".".join(r["clause_id"].split(".")[:2]) for r in data["requirements"]})
+        base = len({".".join(r["control_id"].split(".")[:2]) for r in data["requirements"]})
         assert defined > base
         assert 50 <= base <= 90, f"base-requirement count {base} is outside the expected range"
 
     @pytest.mark.parametrize(
-        ("clause_id", "family", "title_fragment"),
+        ("control_id", "family", "name_fragment"),
         [
             ("1.2.1", 1, "Configuration standards"),
             ("3.3.1", 3, "Sensitive authentication data is not retained"),
@@ -64,26 +64,26 @@ class TestCorpusFile:
         ],
     )
     def test_spot_check_known_clauses(
-        self, clause_id: str, family: int, title_fragment: str
+        self, control_id: str, family: int, name_fragment: str
     ) -> None:
         """TASK-006: spot-check a handful of clause IDs against the published
         standard's structure."""
         data = load_corpus_file()
-        row = next(r for r in data["requirements"] if r["clause_id"] == clause_id)
+        row = next(r for r in data["requirements"] if r["control_id"] == control_id)
         assert row["requirement_family"] == family
-        assert title_fragment.lower() in row["title"].lower()
+        assert name_fragment.lower() in row["name"].lower()
 
     def test_rejects_a_clause_whose_id_contradicts_its_family(self, tmp_path: Any) -> None:
         """A clause filed under the wrong family would be retrieved for the
-        wrong engagements, so the loader refuses it rather than warning."""
+        wrong audits, so the loader refuses it rather than warning."""
         bad = {
             "corpus_version": "v4.0.1-test",
             "requirements": [
                 {
-                    "clause_id": "1.2.1",
+                    "control_id": "1.2.1",
                     "requirement_family": 3,
-                    "title": "Mismatched",
-                    "full_text": "Body.",
+                    "name": "Mismatched",
+                    "requirement_text": "Body.",
                 }
             ],
         }
@@ -96,13 +96,23 @@ class TestCorpusFile:
         bad = {
             "corpus_version": "v4.0.1-test",
             "requirements": [
-                {"clause_id": "1.2.1", "requirement_family": 1, "title": "A", "full_text": "B"},
-                {"clause_id": "1.2.1", "requirement_family": 1, "title": "C", "full_text": "D"},
+                {
+                    "control_id": "1.2.1",
+                    "requirement_family": 1,
+                    "name": "A",
+                    "requirement_text": "B",
+                },
+                {
+                    "control_id": "1.2.1",
+                    "requirement_family": 1,
+                    "name": "C",
+                    "requirement_text": "D",
+                },
             ],
         }
         path = tmp_path / "dup.json"
         path.write_text(json.dumps(bad))
-        with pytest.raises(ValueError, match="Duplicate clause_id"):
+        with pytest.raises(ValueError, match="Duplicate control_id"):
             load_corpus_file(path)
 
 
@@ -113,7 +123,7 @@ class TestCorpusIngest:
 
         assert inserted == expected
         assert skipped == 0
-        stored = db.scalar(select(func.count()).select_from(PCIRequirement))
+        stored = db.scalar(select(func.count()).select_from(ControlDefinition))
         assert stored == expected
 
     def test_ingest_is_idempotent(self, db: Session) -> None:
@@ -129,45 +139,47 @@ class TestCorpusIngest:
         """TASK-006 acceptance criterion."""
         ingest(db)
 
-        by_clause = db.scalar(select(PCIRequirement).where(PCIRequirement.clause_id == "1.2.1"))
+        by_clause = db.scalar(
+            select(ControlDefinition).where(ControlDefinition.control_id == "1.2.1")
+        )
         assert by_clause is not None
         assert by_clause.requirement_family == 1
 
         family_three = db.scalars(
-            select(PCIRequirement).where(PCIRequirement.requirement_family == 3)
+            select(ControlDefinition).where(ControlDefinition.requirement_family == 3)
         ).all()
         assert len(family_three) > 0
-        assert all(r.clause_id.startswith("3.") for r in family_three)
+        assert all(r.control_id.startswith("3.") for r in family_three)
 
     def test_reingesting_under_a_new_version_does_not_touch_existing_rows(
         self, db: Session, tmp_path: Any
     ) -> None:
-        """03_DATA_MODEL.md → PCIRequirement lifecycle. This is the property
+        """03_DATA_MODEL.md → ControlDefinition lifecycle. This is the property
         that lets a finalized report keep meaning what it meant."""
         ingest(db)
         original = db.scalar(
-            select(PCIRequirement).where(
-                PCIRequirement.clause_id == "1.2.1",
-                PCIRequirement.corpus_version == "v4.0.1-summary",
+            select(ControlDefinition).where(
+                ControlDefinition.control_id == "1.2.1",
+                ControlDefinition.corpus_version == "pci-dss-v4.0.1-poc-2",
             )
         )
         assert original is not None
-        original_text = original.full_text
+        original_text = original.requirement_text
 
         updated = json.loads(CORPUS_FILE.read_text())
         updated["corpus_version"] = "v4.0.2-summary"
         updated["requirements"] = [updated["requirements"][0]]
-        updated["requirements"][0]["full_text"] = "Revised wording for the new version."
+        updated["requirements"][0]["requirement_text"] = "Revised wording for the new version."
         path = tmp_path / "next.json"
         path.write_text(json.dumps(updated))
 
         ingest(db, path)
 
         db.refresh(original)
-        assert original.full_text == original_text
+        assert original.requirement_text == original_text
 
         new_row = db.scalar(
-            select(PCIRequirement).where(PCIRequirement.corpus_version == "v4.0.2-summary")
+            select(ControlDefinition).where(ControlDefinition.corpus_version == "v4.0.2-summary")
         )
         assert new_row is not None
-        assert new_row.full_text == "Revised wording for the new version."
+        assert new_row.requirement_text == "Revised wording for the new version."

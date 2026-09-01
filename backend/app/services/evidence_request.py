@@ -22,11 +22,12 @@ from sqlalchemy.orm import Session as DBSession
 
 from app.config.settings import settings
 from app.errors import CODE_NO_CONFIRMED_SCOPE, ConflictError, NotFoundError
+from app.models.corpus import ControlDefinition
 from app.models.enums import EvidenceRequestStatus
-from app.models.scoping import EvidenceRequest, ScopedRequirement
+from app.models.scoping import EvidenceRequest, ScopedControl
 from app.pipelines.llm import LLMError, get_llm_client
 from app.repositories.scoping import EvidenceRequestRepository, ScopedRequirementRepository
-from app.services.engagement import EngagementService
+from app.services.audit import AuditService
 
 if TYPE_CHECKING:
     from app.api.deps import Actor
@@ -44,7 +45,7 @@ restating the clause.
 Do not include the clause number in the text; it is stored separately.
 Do not write a greeting, a signature, or any covering message.
 
-Respond with JSON only: {"requests": [{"clause_id": "1.2.1", "description": "..."}]}"""
+Respond with JSON only: {"requests": [{"control_id": "1.2.1", "description": "..."}]}"""
 
 
 class GeneratedRequests(NamedTuple):
@@ -58,25 +59,25 @@ class EvidenceRequestService:
         self._db = db
         self._requests = EvidenceRequestRepository(db)
         self._scoped = ScopedRequirementRepository(db)
-        self._engagements = EngagementService(db)
+        self._audits = AuditService(db)
 
-    def generate(self, engagement_id: uuid.UUID, actor: Actor) -> GeneratedRequests:
-        engagement = self._engagements.get(engagement_id, actor)
-        self._engagements.ensure_not_finalized(engagement)
+    def generate(self, audit_id: uuid.UUID, actor: Actor) -> GeneratedRequests:
+        audit = self._audits.get(audit_id, actor)
+        self._audits.ensure_not_finalized(audit)
 
-        confirmed = self._scoped.list_for_engagement(engagement_id, actor, confirmed_only=True)
+        confirmed = self._scoped.list_for_audit(audit_id, actor, confirmed_only=True)
         if not confirmed:
             # 04_API_CONTRACT.md: 409 NO_CONFIRMED_SCOPE, with guidance to
             # complete scoping first.
             raise ConflictError(
-                "This engagement has no confirmed scope yet. Confirm at least one "
+                "This audit has no confirmed scope yet. Confirm at least one "
                 "requirement before generating an evidence checklist.",
                 code=CODE_NO_CONFIRMED_SCOPE,
             )
 
         # 01_REQUIREMENTS.md Edge Cases: re-running only drafts requests for
         # genuinely still-missing items and does not duplicate existing ones.
-        already_requested = self._requests.scoped_requirement_ids_with_requests(engagement_id)
+        already_requested = self._requests.scoped_requirement_ids_with_requests(audit_id)
         outstanding = [s for s in confirmed if s.id not in already_requested]
         skipped = len(confirmed) - len(outstanding)
 
@@ -89,8 +90,8 @@ class EvidenceRequestService:
 
         created = [
             self._requests.create(
-                engagement_id=engagement_id,
-                scoped_requirement_id=scoped.id,
+                audit_id=audit_id,
+                scoped_control_id=scoped.id,
                 description=descriptions[scoped.id],
                 description_source="llm" if llm_available else "template",
             )
@@ -101,7 +102,7 @@ class EvidenceRequestService:
         )
 
     def _draft_descriptions(
-        self, outstanding: list[ScopedRequirement]
+        self, outstanding: list[ScopedControl]
     ) -> tuple[dict[uuid.UUID, str], bool]:
         """Return a description per requirement, and whether the LLM supplied them.
 
@@ -112,7 +113,8 @@ class EvidenceRequestService:
         fallback = {s.id: _template_description(s) for s in outstanding}
 
         catalogue = "\n".join(
-            f"{s.requirement.clause_id}: {s.requirement.title} — {s.requirement.full_text}"
+            f"{s.control.control_id}: {s.control.name} — {s.control.requirement_text}"
+            + _artifact_hint(s.control)
             for s in outstanding
         )
         try:
@@ -135,12 +137,12 @@ class EvidenceRequestService:
             )
             return fallback, False
 
-        by_clause = {s.requirement.clause_id: s.id for s in outstanding}
+        by_clause = {s.control.control_id: s.id for s in outstanding}
         drafted = dict(fallback)
         for item in payload["requests"]:
             if not isinstance(item, dict):
                 continue
-            scoped_id = by_clause.get(str(item.get("clause_id", "")).strip())
+            scoped_id = by_clause.get(str(item.get("control_id", "")).strip())
             description = str(item.get("description", "")).strip()
             if scoped_id and description:
                 drafted[scoped_id] = description
@@ -148,9 +150,9 @@ class EvidenceRequestService:
 
     # --- Reads and edits -----------------------------------------------------
 
-    def list_for_engagement(self, engagement_id: uuid.UUID, actor: Actor) -> list[EvidenceRequest]:
-        self._engagements.get(engagement_id, actor)
-        return self._requests.list_for_engagement(engagement_id, actor)
+    def list_for_audit(self, audit_id: uuid.UUID, actor: Actor) -> list[EvidenceRequest]:
+        self._audits.get(audit_id, actor)
+        return self._requests.list_for_audit(audit_id, actor)
 
     def update(
         self,
@@ -170,8 +172,8 @@ class EvidenceRequestService:
         if request is None:
             raise NotFoundError("Evidence request not found.")
 
-        engagement = self._engagements.get(request.engagement_id, actor)
-        self._engagements.ensure_not_finalized(engagement)
+        audit = self._audits.get(request.audit_id, actor)
+        self._audits.ensure_not_finalized(audit)
 
         if description is not None:
             request.description = description
@@ -184,18 +186,41 @@ class EvidenceRequestService:
         """Resolve each request's clause id for the response shape."""
         if not requests:
             return {}
-        scoped_ids = {r.scoped_requirement_id for r in requests}
-        rows = self._db.scalars(
-            select(ScopedRequirement).where(ScopedRequirement.id.in_(scoped_ids))
-        ).all()
-        return {row.id: row.requirement.clause_id for row in rows}
+        scoped_ids = {r.scoped_control_id for r in requests}
+        rows = self._db.scalars(select(ScopedControl).where(ScopedControl.id.in_(scoped_ids))).all()
+        return {row.id: row.control.control_id for row in rows}
 
 
-def _template_description(scoped: ScopedRequirement) -> str:
-    """The non-LLM description. Uses the corpus text the engagement is already
+def _template_description(scoped: ScopedControl) -> str:
+    """The non-LLM description. Uses the corpus text the audit is already
     scoped against, so it is specific to the clause rather than generic."""
-    clause = scoped.requirement
-    return (
+    clause = scoped.control
+    base = (
         f"Please provide documentation evidencing compliance with PCI DSS "
-        f"requirement {clause.clause_id} ({clause.title}). {clause.full_text}"
+        f"requirement {clause.control_id} ({clause.name}). {clause.requirement_text}"
     )
+    artifacts = _required_artifacts(clause)
+    if not artifacts:
+        return base
+    # The control declares exactly which artifacts satisfy it, so ask for those
+    # rather than restating the requirement and leaving the client to guess.
+    return base + " Specifically, please provide: " + "; ".join(artifacts) + "."
+
+
+def _required_artifacts(control: ControlDefinition) -> list[str]:
+    """The artifacts a control's `evidence_requirements` name.
+
+    This field was previously written by the corpus loader and read by nothing —
+    the Evidence Planning Engine described in the architecture was drafting from
+    requirement prose while the structured answer sat unused beside it.
+    """
+    return [
+        str(item.get("description", "")).strip()
+        for item in (control.evidence_requirements or [])
+        if isinstance(item, dict) and str(item.get("description", "")).strip()
+    ]
+
+
+def _artifact_hint(control: ControlDefinition) -> str:
+    artifacts = _required_artifacts(control)
+    return f" [required artifacts: {'; '.join(artifacts)}]" if artifacts else ""

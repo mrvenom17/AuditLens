@@ -24,7 +24,7 @@ from app.models.evidence import EvidenceDocument
 from app.repositories.evidence import EvidenceDocumentRepository
 from app.repositories.scoping import EvidenceRequestRepository
 from app.services import file_storage
-from app.services.engagement import EngagementService
+from app.services.audit import AuditService
 
 if TYPE_CHECKING:
     from app.api.deps import Actor
@@ -37,19 +37,19 @@ class EvidenceService:
         self._db = db
         self._documents = EvidenceDocumentRepository(db)
         self._requests = EvidenceRequestRepository(db)
-        self._engagements = EngagementService(db)
+        self._audits = AuditService(db)
 
     def upload(
         self,
-        engagement_id: uuid.UUID,
+        audit_id: uuid.UUID,
         actor: Actor,
         *,
         upload: BinaryIO,
         filename: str,
         evidence_request_id: uuid.UUID | None = None,
     ) -> EvidenceDocument:
-        engagement = self._engagements.get(engagement_id, actor)
-        self._engagements.ensure_not_finalized(engagement)
+        audit = self._audits.get(audit_id, actor)
+        self._audits.ensure_not_finalized(audit)
 
         # Validation happens before anything is written to disk, so a rejected
         # upload leaves no trace on the filesystem.
@@ -57,23 +57,23 @@ class EvidenceService:
 
         if evidence_request_id is not None:
             request = self._requests.get_scoped(evidence_request_id, actor)
-            if request is None or request.engagement_id != engagement_id:
-                # Checked against *this* engagement specifically: a valid request
-                # id belonging to a different engagement must not link across.
-                raise NotFoundError("Evidence request not found on this engagement.")
+            if request is None or request.audit_id != audit_id:
+                # Checked against *this* audit specifically: a valid request
+                # id belonging to a different audit must not link across.
+                raise NotFoundError("Evidence request not found on this audit.")
 
         content_hash, storage_path = file_storage.store(content)
 
-        duplicate = self._documents.find_duplicate(engagement_id, content_hash)
+        duplicate = self._documents.find_duplicate(audit_id, content_hash)
         if duplicate is not None:
             raise ConflictError(
-                "This exact file has already been uploaded to this engagement.",
+                "This exact file has already been uploaded to this audit.",
                 code="DUPLICATE_EVIDENCE",
                 existing_document_id=str(duplicate.id),
             )
 
         document = self._documents.create(
-            engagement_id=engagement_id,
+            audit_id=audit_id,
             evidence_request_id=evidence_request_id,
             original_filename=safe_filename,
             content_hash=content_hash,
@@ -90,24 +90,24 @@ class EvidenceService:
                 self._db.flush()
 
         logger.info(
-            "evidence.uploaded document=%s engagement=%s bytes=%d type=%s",
+            "evidence.uploaded document=%s audit=%s bytes=%d type=%s",
             document.id,
-            engagement_id,
+            audit_id,
             len(content),
             mime_type,
         )
         return document
 
-    def list_for_engagement(self, engagement_id: uuid.UUID, actor: Actor) -> list[EvidenceDocument]:
-        self._engagements.get(engagement_id, actor)
-        return self._documents.list_for_engagement(engagement_id, actor)
+    def list_for_audit(self, audit_id: uuid.UUID, actor: Actor) -> list[EvidenceDocument]:
+        self._audits.get(audit_id, actor)
+        return self._documents.list_for_audit(audit_id, actor)
 
     def get(self, document_id: uuid.UUID, actor: Actor) -> EvidenceDocument:
         document = self._documents.get_scoped(document_id, actor)
         if document is not None:
             return document
         if self._documents.exists_unscoped(document_id):
-            raise ForbiddenError("You are not assigned to this engagement.")
+            raise ForbiddenError("You are not assigned to this audit.")
         raise NotFoundError("Evidence document not found.")
 
     def read_file(self, document_id: uuid.UUID, actor: Actor) -> tuple[bytes, EvidenceDocument]:

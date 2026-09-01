@@ -145,13 +145,13 @@ def log_finding_transition(
     )
 
 
-def log_admin_engagement_access(*, actor_id: str, engagement_id: str) -> None:
-    """03_DATA_MODEL.md §8.2: Admin access to engagement content is logged
+def log_admin_audit_access(*, actor_id: str, audit_id: str) -> None:
+    """03_DATA_MODEL.md §8.2: Admin access to audit content is logged
     distinctly from normal Reviewer access."""
     _audit.warning(
-        "admin.engagement_access actor=%s engagement=%s",
+        "admin.audit_access actor=%s audit=%s",
         actor_id,
-        engagement_id,
+        audit_id,
     )
 
 

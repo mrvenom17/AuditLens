@@ -4,7 +4,7 @@
 Every route declares its requirement by depending on one of the gates here, so
 the set of endpoints and the set of authorization rules cannot drift apart —
 an endpoint with no gate has no `Actor` to pass to a repository, and every
-engagement-scoped repository method requires one.
+audit-scoped repository method requires one.
 """
 
 from __future__ import annotations
@@ -47,8 +47,8 @@ class Actor:
         return self.role == Role.admin
 
     @property
-    def sees_all_engagements(self) -> bool:
-        """03_DATA_MODEL.md §8.2: Reviewers see all engagements; Admins see all
+    def sees_all_audits(self) -> bool:
+        """03_DATA_MODEL.md §8.2: Reviewers see all audits; Admins see all
         for support purposes, with their access logged distinctly."""
         return self.role in (Role.reviewer, Role.admin)
 
@@ -111,7 +111,7 @@ def require_roles(*roles: Role):  # type: ignore[no-untyped-def]
 
 # Named gates, so a route reads as its rule rather than as a list of roles.
 RequireAuditorOrReviewer = Annotated[Actor, Depends(require_roles(Role.auditor, Role.reviewer))]
-# 04_API_CONTRACT.md → POST /api/engagements/{id}/finalize: Reviewer only. Admin
+# 04_API_CONTRACT.md → POST /api/audits/{id}/finalize: Reviewer only. Admin
 # is deliberately excluded — 00_PRODUCT.md §5.3 states sign-off authority is a
 # role property, not an escalation path, so an Admin cannot finalize by virtue
 # of being an Admin.

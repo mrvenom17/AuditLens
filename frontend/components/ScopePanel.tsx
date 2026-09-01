@@ -4,11 +4,15 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
 import { ApiError, api } from "@/lib/api";
-import type { ScopeSuggestion, ScopedRequirement } from "@/types/api";
+import {
+  APPLICABILITY_LABELS,
+  type ScopeSuggestion,
+  type ScopedControl,
+} from "@/types/api";
 
 interface Props {
-  engagementId: string;
-  scope: ScopedRequirement[];
+  auditId: string;
+  scope: ScopedControl[];
   /** Reviewer-only actions are hidden when false. The server re-checks. */
   canAcknowledgeGaps: boolean;
   readOnly: boolean;
@@ -24,7 +28,7 @@ interface Props {
  * So the degraded state is presented as a route, not a failure — the manual
  * add-clause control is already on screen either way.
  */
-export function ScopePanel({ engagementId, scope, canAcknowledgeGaps, readOnly }: Props) {
+export function ScopePanel({ auditId, scope, canAcknowledgeGaps, readOnly }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [busy, setBusy] = useState<string | null>(null);
@@ -44,14 +48,14 @@ export function ScopePanel({ engagementId, scope, canAcknowledgeGaps, readOnly }
     setNotice(null);
     try {
       const result = await api.post<ScopeSuggestion>(
-        `/api/engagements/${engagementId}/scope-suggestion`,
+        `/api/audits/${auditId}/scope-suggestion`,
       );
       if (result.manual_scoping_required) {
         // Not an error state. The tool is less automated right now, not broken,
         // and the message says what to do rather than what went wrong.
         setNotice(
           "The scope assistant is unavailable. Add the applicable clauses below and " +
-            "confirm each one — the rest of the engagement works normally.",
+            "confirm each one — the rest of the audit works normally.",
         );
       } else {
         const saq = result.saq_type ? ` Suggested SAQ type: ${result.saq_type}.` : "";
@@ -80,8 +84,8 @@ export function ScopePanel({ engagementId, scope, canAcknowledgeGaps, readOnly }
     setBusy("add");
     setError(null);
     try {
-      await api.post(`/api/engagements/${engagementId}/scoped-requirements`, {
-        clause_id: clause,
+      await api.post(`/api/audits/${auditId}/scoped-requirements`, {
+        control_id: clause,
       });
       setManualClause("");
       setNotice(`Clause ${clause} added to scope. Confirm it to make it count.`);
@@ -93,7 +97,7 @@ export function ScopePanel({ engagementId, scope, canAcknowledgeGaps, readOnly }
     }
   }
 
-  async function setConfirmed(row: ScopedRequirement, confirmedNext: boolean) {
+  async function setConfirmed(row: ScopedControl, confirmedNext: boolean) {
     setBusy(row.id);
     setError(null);
     setNotice(null);
@@ -107,9 +111,9 @@ export function ScopePanel({ engagementId, scope, canAcknowledgeGaps, readOnly }
     }
   }
 
-  async function acknowledgeGap(row: ScopedRequirement) {
+  async function acknowledgeGap(row: ScopedControl) {
     const note = window.prompt(
-      `Why is ${row.clause_id} being finalized without supporting evidence?\n\n` +
+      `Why is ${row.control_id} being finalized without supporting evidence?\n\n` +
         "This is recorded in the report.",
     );
     if (note === null) return;
@@ -194,9 +198,21 @@ export function ScopePanel({ engagementId, scope, canAcknowledgeGaps, readOnly }
           <tbody>
             {scope.map((row) => (
               <tr key={row.id}>
-                <td className="clause">{row.clause_id}</td>
+                <td className="clause">{row.control_id}</td>
                 <td>
                   <div>{row.title}</div>
+                  {row.applicability_status !== "IN_SCOPE" && (
+                    <span
+                      className={`pill pill-applicability-${row.applicability_status}`}
+                      title={
+                        row.applicability_status === "UNDETERMINED"
+                          ? "The company profile does not answer a question this control's conditions ask. Complete the profile to let the engine decide."
+                          : row.rationale ?? undefined
+                      }
+                    >
+                      {APPLICABILITY_LABELS[row.applicability_status]}
+                    </span>
+                  )}
                   {row.rationale && (
                     <div
                       className={
@@ -219,7 +235,11 @@ export function ScopePanel({ engagementId, scope, canAcknowledgeGaps, readOnly }
                   )}
                 </td>
                 <td className="small muted">
-                  {row.source === "ai_suggested" ? "AI" : "Auditor"}
+                  {row.source === "ai_suggested"
+                    ? "AI (advisory)"
+                    : row.source === "deterministic"
+                      ? "Rule"
+                      : "Auditor"}
                 </td>
                 <td>
                   <div className="scope-actions">

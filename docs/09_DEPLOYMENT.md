@@ -1,5 +1,7 @@
 # 09_DEPLOYMENT.md
 
+> No infrastructure changes from the prior revision — the rule engine and Evidence Gate are in-process Python modules with zero external dependencies, so this new architecture adds no new services, queues, or infra to deploy. The async worker's existing responsibilities (extraction, OCR, chunking, embedding) simply gain two more in-process steps (fact extraction, rule evaluation) that run on the same worker, calling no new external endpoint.
+
 ## Environments
 
 - **Local:** developer machine, Docker Compose, local Postgres.
@@ -18,25 +20,10 @@
 | `MAX_UPLOAD_SIZE_MB` | Upload size limit | All | No | `25` |
 | `CORS_ALLOWED_ORIGIN` | Frontend origin allowed for CORS | All | No | `https://auditlens.yourdomain.tld` |
 | `ENVIRONMENT` | local / production | All | No | `production` |
-
-Added during TASK-024, when the production stack was first actually run:
-
-| Variable | Purpose | Required In | Secret? | Example Format |
-|---|---|---|---|---|
-| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | Database container credentials. Must agree with `DATABASE_URL`. | Production | Yes (password) | `auditlens_app` |
-| `TUNNEL_TOKEN` | Cloudflare Tunnel token, from the Zero Trust dashboard. The tunnel is the only ingress. | Production | Yes | provider-specific token |
-| `LLM_MODEL` | Model identifier (ADR-009). Separated from the key so a model change is not a credential change. | All | No | `claude-sonnet-5` |
-| `EMBEDDING_DIMENSIONS` | Vector width, must match the model and the migrated column. | All | No | `384` |
-| `BACKUP_RETENTION_DAYS` / `BACKUP_INTERVAL_SECONDS` | Local `pg_dump` retention and cadence. | Production | No | `30` / `86400` |
+| `RULE_ENGINE_VERSION` | Stamped onto every `ControlEvaluation` for reproducibility | All | No | `1.0.0` |
+| `CONTROL_CORPUS_VERSION` | Which authored control-definition version is active | All | No | `pci-dss-v4.0.1-poc-1` |
 
 Never use real secrets in this table or in `.env.example` — placeholders only.
-
-Every variable is declared `${VAR:?...}` in the production overlay, so a missing
-one aborts `docker compose up` with a message naming it. The application then
-re-checks at startup (`Settings.validate_for_environment`) and refuses to serve
-on a development `SESSION_SECRET` or `DATABASE_URL`, or an `http://` CORS
-origin — a deployment that forgot one fails loudly rather than running
-misconfigured.
 
 ## Build Process
 
@@ -86,7 +73,8 @@ If a deployment fails health checks post-deploy, the previous container image/ve
 [ ] Database user is not superuser
 [ ] Log rotation configured
 [ ] Disk space alert configured for the evidence-storage volume
-[ ] Security release checklist (05_SECURITY.md §10.11) passed for this release
+[ ] Security release checklist (05_SECURITY.md §10.12) passed for this release
+[ ] All five AI Safety tests (05_SECURITY.md §10.11 / 08_TESTING.md) passing
 ```
 
 ## Definition of Successfully Deployed

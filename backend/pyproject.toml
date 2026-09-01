@@ -78,7 +78,10 @@ ignore = [
 # Hardcoded passwords in test fixtures are fixtures, not secrets. The real
 # guard against committed credentials is the CI secret scan, not this rule.
 "tests/*" = ["S105", "S106", "S107"]
-"migrations/*" = ["E501"]
+# Migrations build DDL/DML as strings by nature, and every interpolated value
+# in them comes from a module-level constant in the same file — never from a
+# request. S608 has no true positive to find here.
+"migrations/*" = ["E501", "S608"]
 
 [tool.mypy]
 python_version = "3.12"

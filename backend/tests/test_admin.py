@@ -65,7 +65,7 @@ class TestAdminRoleGate:
         body: dict[str, Any] | None,
         role: Role,
     ) -> None:
-        """A Reviewer has the most authority in the engagement workflow and is
+        """A Reviewer has the most authority in the audit workflow and is
         still not an account administrator — the two are separate powers."""
         user = make_user(role, password=PASSWORD)
         login(api_client, user)
@@ -321,14 +321,14 @@ class TestUpdateUser:
         )
 
     def test_role_change_takes_effect_on_the_next_request(
-        self, api_client: TestClient, admin: User, make_user: Any, make_engagement: Any
+        self, api_client: TestClient, admin: User, make_user: Any, make_audit: Any
     ) -> None:
         """Role is re-read per request, so a promotion does not require the user
         to log out and back in."""
         target = make_user(Role.auditor, password=PASSWORD)
-        engagement = make_engagement(target)
+        audit = make_audit(target)
         login(api_client, target)
-        assert api_client.post(f"/api/engagements/{engagement.id}/finalize").status_code == 403
+        assert api_client.post(f"/api/audits/{audit.id}/finalize").status_code == 403
         target_cookies = dict(api_client.cookies)
 
         login(api_client, admin)
@@ -339,9 +339,9 @@ class TestUpdateUser:
         api_client.cookies.clear()
         for name, value in target_cookies.items():
             api_client.cookies.set(name, value)
-        # No longer a 403 for role reasons — it now fails on engagement state,
+        # No longer a 403 for role reasons — it now fails on audit state,
         # which is the next check in line.
-        assert api_client.post(f"/api/engagements/{engagement.id}/finalize").status_code != 403
+        assert api_client.post(f"/api/audits/{audit.id}/finalize").status_code != 403
 
     def test_an_admin_cannot_deactivate_themselves(
         self, api_client: TestClient, admin: User
@@ -448,7 +448,7 @@ class TestClientProfileDocuments:
         assert len(body["content_hash"]) == 64
         assert body["uploaded_by"] == str(auditor.id)
 
-    def test_uploaded_document_can_seed_an_engagement(
+    def test_uploaded_document_can_seed_an_audit(
         self, api_client: TestClient, make_user: Any
     ) -> None:
         """This is the gap that made `source_document_ids` a dead parameter:
@@ -461,7 +461,7 @@ class TestClientProfileDocuments:
         ).json()
 
         response = api_client.post(
-            "/api/engagements",
+            "/api/audits",
             json={
                 "client_name": "Northwind Retail",
                 "entity_type": "merchant",
@@ -538,7 +538,7 @@ class TestClientProfileDocuments:
         self, api_client: TestClient, make_user: Any, role: Role
     ) -> None:
         """03_DATA_MODEL.md → ClientProfileDocument: firm-wide, not
-        engagement-owned, so there is no assignment to check against."""
+        audit-owned, so there is no assignment to check against."""
         user = make_user(role, password=PASSWORD)
         login(api_client, user)
 

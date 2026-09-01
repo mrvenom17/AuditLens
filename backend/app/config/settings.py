@@ -65,8 +65,11 @@ class Settings(BaseSettings):
     # 04_API_CONTRACT.md § scope-suggestion rate limit
     SCOPE_SUGGESTION_PER_HOUR: int = 10
 
-    # 01_REQUIREMENTS.md §Evidence-to-Clause Matching rule 4
-    CONFIDENCE_MANUAL_REVIEW_THRESHOLD: float = 0.6
+    # 09_DEPLOYMENT.md — stamped onto every ControlEvaluation and every Report,
+    # so a result can always be traced to the exact logic and corpus that
+    # produced it, and a later change to either cannot rewrite history.
+    RULE_ENGINE_VERSION: str = "1.0.0"
+    CONTROL_CORPUS_VERSION: str = "pci-dss-v4.0.1-poc-2"
 
     # 02_ARCHITECTURE.md §7.5 — stuck-in-processing sweep
     EXTRACTION_STUCK_TIMEOUT_MINUTES: int = 10

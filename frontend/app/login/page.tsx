@@ -27,7 +27,7 @@ export default function LoginPage() {
       // about the user is kept in client state — every page re-derives it from
       // the server, so there is no stale identity to reuse
       // (02_ARCHITECTURE.md §7.4).
-      router.push("/engagements");
+      router.push("/audits");
       router.refresh();
     } catch (caught) {
       if (caught instanceof ApiError) {

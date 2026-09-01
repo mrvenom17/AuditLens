@@ -6,14 +6,14 @@ import { useState, useTransition } from "react";
 import { ApiError, api } from "@/lib/api";
 import type {
   BlockingRequirement,
-  EngagementDetail,
+  AuditDetail,
   FinalizationReadiness,
   FinalizeResult,
   Report,
 } from "@/types/api";
 
 interface Props {
-  engagement: EngagementDetail;
+  audit: AuditDetail;
   readiness: FinalizationReadiness;
   report: Report | null;
   /** True only for a Reviewer. The server checks the role again regardless. */
@@ -42,7 +42,7 @@ interface Props {
  *    irreversible action is not deliberate enough, so this asks for an explicit
  *    confirmation that states what is about to be signed.
  */
-export function FinalizePanel({ engagement, readiness, report, canFinalize }: Props) {
+export function FinalizePanel({ audit, readiness, report, canFinalize }: Props) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [confirming, setConfirming] = useState(false);
@@ -50,14 +50,14 @@ export function FinalizePanel({ engagement, readiness, report, canFinalize }: Pr
   const [error, setError] = useState<string | null>(null);
   const [lateBlockers, setLateBlockers] = useState<BlockingRequirement[] | null>(null);
 
-  const finalized = engagement.status === "finalized";
+  const finalized = audit.status === "finalized";
 
   async function finalize() {
     setBusy(true);
     setError(null);
     setLateBlockers(null);
     try {
-      await api.post<FinalizeResult>(`/api/engagements/${engagement.id}/finalize`);
+      await api.post<FinalizeResult>(`/api/audits/${audit.id}/finalize`);
       setConfirming(false);
       startTransition(() => router.refresh());
     } catch (caught) {
@@ -70,7 +70,7 @@ export function FinalizePanel({ engagement, readiness, report, canFinalize }: Pr
           setLateBlockers(Array.isArray(blocking) ? (blocking as BlockingRequirement[]) : []);
           setError("New work appeared since this page loaded. It is listed below.");
         } else if (caught.code === "ALREADY_FINALIZED") {
-          setError("This engagement was already finalized.");
+          setError("This audit was already finalized.");
           startTransition(() => router.refresh());
         } else {
           setError(caught.displayMessage);
@@ -84,7 +84,7 @@ export function FinalizePanel({ engagement, readiness, report, canFinalize }: Pr
   }
 
   if (finalized) {
-    return <FinalizedPanel engagement={engagement} report={report} />;
+    return <FinalizedPanel audit={audit} report={report} />;
   }
 
   const blockers = lateBlockers ?? readiness.blocking_requirements;
@@ -96,7 +96,7 @@ export function FinalizePanel({ engagement, readiness, report, canFinalize }: Pr
         <div>
           <h2>Sign off</h2>
           <p className="tiny muted">
-            Finalizing produces the client report and closes the engagement. It cannot
+            Finalizing produces the client report and closes the audit. It cannot
             be undone.
           </p>
         </div>
@@ -121,8 +121,8 @@ export function FinalizePanel({ engagement, readiness, report, canFinalize }: Pr
 
             <ul className="blocker-list">
               {blockers.map((blocker) => (
-                <li key={blocker.scoped_requirement_id} className="blocker">
-                  <span className="clause">{blocker.clause_id}</span>
+                <li key={blocker.scoped_control_id} className="blocker">
+                  <span className="clause">{blocker.control_id}</span>
                   <span className="small muted">{blocker.reason}</span>
                 </li>
               ))}
@@ -130,7 +130,7 @@ export function FinalizePanel({ engagement, readiness, report, canFinalize }: Pr
           </>
         ) : (
           <div className="note note-ready">
-            Everything in the confirmed scope has been resolved. This engagement is
+            Everything in the confirmed scope has been resolved. This audit is
             ready to sign off.
           </div>
         )}
@@ -139,22 +139,22 @@ export function FinalizePanel({ engagement, readiness, report, canFinalize }: Pr
           // Stated rather than silently omitted: an Auditor who has finished the
           // work should know why they cannot close it and who can.
           <p className="small muted">
-            Only a Reviewer can sign off an engagement.
+            Only a Reviewer can sign off an audit.
           </p>
         ) : confirming ? (
           <div className="finalize-confirm">
             <p className="small">
-              <strong>Sign off {engagement.client_name}?</strong>
+              <strong>Sign off {audit.client_name}?</strong>
             </p>
             <ul className="small finalize-summary">
               <li>
-                {engagement.counts.findings_approved} approved finding
-                {engagement.counts.findings_approved === 1 ? "" : "s"} will be recorded
+                {audit.counts.findings_approved} approved finding
+                {audit.counts.findings_approved === 1 ? "" : "s"} will be recorded
                 in the report.
               </li>
               <li>
-                {engagement.counts.findings_rejected} rejected finding
-                {engagement.counts.findings_rejected === 1 ? "" : "s"} will be excluded
+                {audit.counts.findings_rejected} rejected finding
+                {audit.counts.findings_rejected === 1 ? "" : "s"} will be excluded
                 but retained.
               </li>
               <li>
@@ -191,7 +191,7 @@ export function FinalizePanel({ engagement, readiness, report, canFinalize }: Pr
               disabled={!ready || busy}
               title={ready ? undefined : "Resolve the blocking requirements first"}
             >
-              Finalize engagement
+              Finalize audit
             </button>
           </div>
         )}
@@ -201,10 +201,10 @@ export function FinalizePanel({ engagement, readiness, report, canFinalize }: Pr
 }
 
 function FinalizedPanel({
-  engagement,
+  audit,
   report,
 }: {
-  engagement: EngagementDetail;
+  audit: AuditDetail;
   report: Report | null;
 }) {
   const snapshot = report?.snapshot_data;
@@ -217,15 +217,15 @@ function FinalizedPanel({
           <p className="tiny muted">
             {snapshot
               ? `Signed off by ${snapshot.generated_by.name}`
-              : "This engagement is finalized."}
-            {engagement.finalized_at && (
-              <span className="mono"> · {engagement.finalized_at.slice(0, 10)}</span>
+              : "This audit is finalized."}
+            {audit.finalized_at && (
+              <span className="mono"> · {audit.finalized_at.slice(0, 10)}</span>
             )}
           </p>
         </div>
         <a
           className="btn btn-sm btn-primary"
-          href={`/api/engagements/${engagement.id}/report?format=pdf`}
+          href={`/api/audits/${audit.id}/report?format=pdf`}
           download
         >
           Download PDF

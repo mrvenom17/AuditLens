@@ -1,8 +1,8 @@
 """Client profile document upload (ADR-011 item 6, ADR-012).
 
 These are the firm's own client-file documents, uploaded so they can be
-referenced by `source_document_ids` at engagement creation. Distinct from
-evidence: they are not attached to an engagement, and they never enter the
+referenced by `source_document_ids` at audit creation. Distinct from
+evidence: they are not attached to an audit, and they never enter the
 extraction/matching pipeline.
 
 Validation is identical to evidence upload and reuses the same module — the
@@ -20,9 +20,9 @@ from sqlalchemy.orm import Session as DBSession
 
 from app.api.deps import CurrentActor
 from app.db.session import get_db
-from app.repositories.engagement import ClientProfileDocumentRepository
+from app.repositories.audit import ClientProfileDocumentRepository
+from app.schemas.audit import ClientProfileDocumentResponse
 from app.schemas.common import ErrorResponse
-from app.schemas.engagement import ClientProfileDocumentResponse
 from app.services import file_storage
 
 router = APIRouter(prefix="/api/client-profile-documents", tags=["client-documents"])
@@ -45,7 +45,7 @@ def upload_client_profile_document(
     """Upload a firm-held client-file document.
 
     Available to any authenticated staff member: these are the firm's own
-    records in a single-tenant deployment, not engagement-owned data, so there
+    records in a single-tenant deployment, not audit-owned data, so there
     is no assignment to check against (03_DATA_MODEL.md → ClientProfileDocument).
 
     Stored under a separate `profile` subdirectory rather than alongside

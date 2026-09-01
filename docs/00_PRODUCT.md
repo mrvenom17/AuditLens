@@ -1,162 +1,109 @@
 # 00_PRODUCT.md
 
-> **Scope note:** this entire documentation set covers **Stage 1 (Deployed POC)** only, per the build sequence already agreed: one framework, one audit firm, no live client-infra connectors, human sign-off mandatory. Stages 2–5 (scaling, multi-framework, multi-tenant, business conversion) are explicitly future work and must not be implemented against this spec.
+> **Scope note:** this documentation set covers **Level 0 (Working PoC)** of AuditLens's 5-level roadmap: one framework (PCI DSS v4.0.1), **5–10 deterministically-verifiable controls only**, one test company, one auditor, one audit firm (single-tenant). Full-corpus scope, multi-tenant, continuous monitoring/connectors, and multi-framework support are Level 2+ and explicitly out of scope here. Terminology note: earlier drafts of this documentation used "Engagement" — this revision adopts **"Audit"** throughout to match the current codebase and target architecture.
 
 ## 5.1 Product Overview
 
-- **Product name:** AuditLens (confirmed 2026-08-22 — see ADR-008)
-- **One-sentence description:** An internal tool that helps one audit firm's PCI DSS v4.0.1 assessment team scope requirements, request evidence, and draft control findings faster, with every finding requiring human review before it counts.
-- **Expanded description:** AuditLens ingests a client's existing profile (already held by the firm, entered manually or uploaded — no live connection to client systems), determines which PCI DSS v4.0.1 requirements apply, tracks what evidence is missing, ingests client-submitted evidence documents, and produces AI-drafted findings (evidence → matched clause → suggested status → confidence score) for a human auditor to accept, edit, or reject. Nothing is final until a human marks it so.
-- **Core problem:** Auditors spend the majority of engagement time on evidence-chasing and manual clause-matching rather than judgment-intensive analysis.
-- **Why it matters:** This is repetitive, low-judgment work that scales linearly with engagement count — automating the first pass (not the decision) directly reduces billable-hour cost per engagement without reducing audit quality, if — and only if — the human remains the final authority.
-- **Proposed solution:** A single-tenant web application used internally by one audit firm's engagement team, scoped to PCI DSS v4.0.1 only for this stage.
-- **Product boundaries:** No live connection to any client's cloud/IT systems. No autonomous compliance verdicts. No multi-tenancy. No frameworks beyond PCI DSS v4.0.1.
+- **Product name:** AuditLens
+- **One-sentence description:** A deterministic-first, evidence-grounded audit support tool — GenAI drafts and explains, but every PASS/FAIL is produced by a rule engine running against provenanced facts, and a human auditor makes the final call.
+- **Expanded description:** AuditLens ingests a client's evidence documents, extracts structured, source-traceable **Facts** from them (not opinions), evaluates those facts against machine-readable **Rules** attached to each control, and only then produces a system result — PASS, FAIL, PARTIAL, INSUFFICIENT_EVIDENCE, CONFLICT, or NOT_APPLICABLE. Every result must pass an **Evidence Gate** verifying its citation is real, current, and uncontradicted before it ever reaches a human. GenAI's role is bounded to drafting evidence-request language, explaining a system result in plain English, and drafting report prose — it never determines truth, never approves, and never modifies evidence or scope.
+- **Core problem:** Prior-generation "AI compliance" tools ask an LLM to read evidence and judge compliance directly. This is fast but untrustworthy — the same mechanism that makes it fast (a language model inferring an answer) is the mechanism that makes it hallucinate, miss contradictions, or get manipulated by adversarial content embedded in evidence documents (prompt injection).
+- **Why it matters:** An audit tool that occasionally hallucinates a PASS is worse than no tool — it doesn't just fail to save time, it actively creates false confidence in a compliance posture. Separating "what does the evidence literally say" (deterministic) from "how do I explain/communicate this" (GenAI) is what makes the speed gain trustworthy.
+- **Proposed solution:** A single-tenant web application, one audit firm, PCI DSS v4.0.1 only, 5–10 controls selected specifically because they support deterministic verification (see §5.5).
+- **Product boundaries:** No live connection to client cloud/IT systems (Level 4+ territory). No autonomous compliance verdicts — a system result is not a finding until a human reviews it. No multi-tenancy. No frameworks beyond PCI DSS v4.0.1.
 
 ## 5.2 Target Users
 
-### User type: Auditor (Engagement Staff)
-- **Who they are:** Junior-to-mid-level staff at the audit firm running the day-to-day engagement.
-- **Goals:** Scope an engagement quickly, get evidence requests out fast, review AI-drafted findings efficiently.
-- **Primary problems:** Manually re-reading the PCI DSS spec for every client, manually tracking what's missing, manually reading every submitted document to check against 78 base requirements.
-- **Technical capability:** Comfortable with web apps and document upload; not expected to write code or understand the underlying AI/retrieval mechanics.
-- **Allowed to:** Create/edit engagements they're assigned to, upload client profile info, generate evidence requests, upload evidence documents, review and edit AI-drafted findings for their own engagements.
-- **Must never be allowed to:** Mark an engagement's final report as "signed off" (Reviewer-only action). Access engagements they aren't assigned to. Delete evidence documents once uploaded (audit-trail integrity).
-
-### User type: Reviewer (Engagement Lead / Partner)
-- **Who they are:** The senior/licensed professional accountable for the engagement's final output.
-- **Goals:** Verify draft findings are correct, catch anything the AI or the junior auditor missed, produce the final client-facing report.
-- **Allowed to:** Everything an Auditor can do, plus: override any finding on engagements they supervise, finalize and sign off an engagement, view all engagements at the firm.
-- **Must never be allowed to:** Have the system auto-finalize a report without their explicit action.
-
-### User type: Admin
-- **Who they are:** Whoever manages the firm's use of the tool (likely you, initially).
-- **Goals:** Manage user accounts, keep the PCI DSS corpus current, monitor system health.
-- **Allowed to:** Create/deactivate user accounts, update the policy corpus, view audit logs.
-- **Must never be allowed to:** Bypass the Reviewer-only sign-off step, even as Admin — sign-off authority is a role property, not an escalation path.
+Unchanged from the prior revision: **Auditor**, **Reviewer**, **Admin** — see role matrix below. The one addition: Auditors and Reviewers now interact with a **System Result** (deterministic, or explicitly flagged as needing human judgment) rather than an "AI suggestion" — this is a meaningful trust distinction that should be visible in every screen that shows one.
 
 ## 5.3 User Roles
 
 | Role | Permissions | Restricted actions | Data visibility | Ownership | Admin capabilities |
 |---|---|---|---|---|---|
-| Auditor | Create/edit assigned engagements, upload docs, generate requests, edit draft findings | Cannot finalize engagement; cannot delete evidence; cannot see other auditors' unassigned engagements | Own assigned engagements only | Owns engagement drafts, not final sign-off | None |
-| Reviewer | All Auditor actions + finalize/sign-off + override any finding | Cannot delete evidence (append-only for audit trail) | All engagements at the firm | Owns final sign-off | None |
-| Admin | User management, corpus management, audit log access | Cannot finalize engagements unless also a Reviewer | All engagements (for support purposes) — access is logged | System configuration | Full user/corpus management |
+| Auditor | Create/edit assigned audits, upload evidence, trigger fact extraction/evaluation, edit draft findings | Cannot finalize audit; cannot delete evidence or facts; cannot override a REJECTED Evidence Gate result without Reviewer sign-off | Own assigned audits only | Owns audit drafts, not final sign-off | None |
+| Reviewer | All Auditor actions + finalize/sign-off + override any Finding, including Evidence-Gate-rejected ones (with mandatory justification note) | Cannot delete evidence/facts (append-only) | All audits at the firm | Owns final sign-off | None |
+| Admin | User management, control corpus management (including rule definitions), audit log access | Cannot finalize audits unless also a Reviewer; cannot edit a Control's rules on an audit already in progress (versioning applies — see 03_DATA_MODEL.md) | All audits (logged access) | System configuration | Full user/corpus management |
 
 ## 5.4 Core User Journeys
 
-### Journey 1: Scope a new engagement
-```
-Trigger: Auditor starts a new PCI DSS engagement for a client
-→ User action: creates engagement, enters/uploads client profile (entity type, transaction volume tier, existing SAQ type if known, tech summary from firm's existing file)
-→ System validation: required fields present (client name, entity type, merchant level)
-→ Authentication check: valid session required
-→ Authorization check: user has Auditor or Reviewer role
-→ Processing: system matches client profile against PCI DSS v4.0.1 corpus, proposes applicable requirement set (e.g., SAQ D vs A-EP scope)
-→ Database changes: Engagement record created; ScopedRequirement records created (proposed, editable)
-→ External service interaction: LLM call for scope-matching suggestion (see 02_ARCHITECTURE.md §7.6)
-→ Success response: engagement created with proposed scope, status = "scoping"
-→ Failure scenarios: LLM call times out → engagement still created, scope left empty with a manual-scoping prompt (never blocks on the AI call)
-```
+See 01_REQUIREMENTS.md for the fully detailed versions. At a high level, the flow is now:
 
-### Journey 2: Generate and track evidence requests
-```
-Trigger: Auditor reviews the scoped requirement set
-→ User action: requests "generate evidence checklist"
-→ System validation: engagement must be in "scoping" or "in_progress" status
-→ Authorization check: user assigned to this engagement
-→ Processing: system compares scoped requirements against evidence already on file; drafts a checklist of missing items with plain-language descriptions
-→ Database changes: EvidenceRequest records created, status = "drafted"
-→ Success response: checklist shown to auditor for review/edit before the auditor sends it externally
-→ Failure scenarios: no scoped requirements yet → error, must complete Journey 1 first
-```
-
-### Journey 3: Ingest and match evidence
-```
-Trigger: Auditor receives documents from the client (via their own channel) and uploads them
-→ User action: uploads file(s) against one or more EvidenceRequest items
-→ System validation: file type allowed (PDF, DOCX, XLSX, PNG/JPG), size limit enforced
-→ Authorization check: user assigned to this engagement
-→ Processing: text/structure extraction → embedding → retrieval against scoped clauses → LLM drafts a finding per matched clause with a confidence score and a citation to the specific clause and the specific evidence location
-→ Database changes: EvidenceDocument record created; Finding record(s) created with status = "draft"
-→ External service interaction: extraction pipeline, embedding model, LLM API
-→ Success response: draft findings appear in the engagement's review queue
-→ Failure scenarios: extraction fails (corrupt/unreadable file) → EvidenceDocument marked "extraction_failed", auditor notified, no Finding auto-created; low-confidence match → Finding still created but flagged `needs_manual_review = true`
-```
-
-### Journey 4: Review, override, and finalize
-```
-Trigger: All scoped requirements have at least one draft Finding (or auditor decides to proceed with gaps noted)
-→ User action: Auditor/Reviewer works through the Finding queue — accept, edit, or override each
-→ Authorization check: only Reviewer can change engagement status to "finalized"
-→ Processing: report assembled from all Finding records with status = "approved" (draft/rejected findings excluded, gaps listed explicitly)
-→ Database changes: Report record created, linked to the approved Finding set at time of generation (immutable snapshot)
-→ Success response: Reviewer downloads/exports the report; engagement status = "finalized"
-→ Failure scenarios: attempt to finalize with unresolved (still-draft) findings → blocked with an explicit list of what's unresolved; the system never finalizes on the auditor's behalf
+```text
+Create Audit → Select Company Profile → Scope Applicable Controls
+→ Generate Evidence Requests (GenAI-drafted, human-sent)
+→ Client Provides Evidence → Upload + Security Checks
+→ Async: Extract → Chunk → Embed (discovery only) → Extract FACTS (with provenance)
+→ Deterministic Rule Engine evaluates Facts against Rules
+→ Evidence Gate verifies the result is citation-backed, current, uncontradicted
+→ System Result produced (PASS/FAIL/PARTIAL/INSUFFICIENT_EVIDENCE/CONFLICT/NOT_APPLICABLE)
+→ GenAI drafts a plain-language explanation of the System Result (never changes it)
+→ Auditor/Reviewer reviews: Requirement + Exact Evidence + Facts + Rule + System Result + AI Explanation
+→ Approve / Reject / Request More Evidence
+→ Reviewer Finalizes → Immutable Report (snapshotting policy version, evidence hashes, rules, results, decisions)
 ```
 
 ## 5.5 Features
 
-### Must Have — V1 (POC)
-- Engagement creation with manual/uploaded client profile entry
-- PCI DSS v4.0.1 corpus-backed scope suggestion
-- Evidence-request checklist generation (draft only, human sends)
-- Evidence document upload and extraction
-- Evidence-to-clause matching with confidence score and citation
-- Human review queue: accept / edit / reject each draft finding
-- Reviewer-only finalize + report export
-- Full audit trail of every AI suggestion and every human decision
+### Must Have — V1 (Level 0 PoC)
+- Audit creation with company profile intake (from firm's existing records — no live client connectors)
+- **5–10 hand-picked PCI DSS v4.0.1 controls, chosen specifically because they support deterministic evaluation** (e.g., minimum password length, MFA enabled, account lockout threshold, TLS minimum version, log retention period, encryption enabled, session timeout, password history, supported software version, required security logging)
+- Machine-readable control definitions: `evaluation_mode`, `evidence_requirements`, `facts`, `rules` (see 03_DATA_MODEL.md)
+- Evidence upload with hashing (SHA-256), MIME/content validation, and (flagged, not yet mandatory at Level 0) malware-scan hook
+- Fact extraction with full provenance (document, page/line/cell, hash, timestamp, extractor version)
+- Deterministic rule engine (`>=`, `<=`, `==`, `!=`, `IN`, `NOT_IN`, `CONTAINS`, `EXISTS`, `NOT_EXISTS`) with **zero LLM dependency**
+- Evidence Gate — a hard checkpoint before any result reaches a human (see 01_REQUIREMENTS.md)
+- Six-state System Result (not binary): PASS / FAIL / PARTIAL / INSUFFICIENT_EVIDENCE / CONFLICT / NOT_APPLICABLE
+- GenAI used only for: evidence-request drafting, plain-language explanation of an already-determined System Result, report-prose drafting
+- Human review queue distinguishing System Result (machine-determined) from Auditor Decision (human-determined) as genuinely separate fields
+- Reviewer-only finalize + immutable report export
+- Full audit trail: every fact, every rule evaluation, every gate check, every human decision
 
 ### Should Have
-- Bulk evidence upload with auto-routing to the right EvidenceRequest item
-- Search across an engagement's evidence/findings
-- Basic engagement dashboard (status, % of requirements with approved findings)
+- Contradiction detection across multiple evidence documents for the same fact
+- Evidence freshness/staleness rules per control
+- Bulk evidence upload with auto-routing
 
 ### Nice to Have
-- Direct in-app email sending for evidence requests
-- Prior-engagement evidence reuse for repeat clients
+- Direct in-app evidence-request sending
+- A small golden-dataset regression suite (Level 1 territory, but worth prototyping early)
 
 ### Explicitly Out of Scope (this stage)
-- Any framework other than PCI DSS v4.0.1
-- Live connectors to client cloud/IAM/network systems
-- Multi-tenancy (multiple audit firms)
-- Autonomous pass/fail without human approval
-- E-signature / legally-binding sign-off (sign-off in this tool means "marked finalized," not a legal attestation instrument)
-- Billing/payments
+- Any control that genuinely requires human interpretive judgment rather than deterministic fact-checking (defer these to Level 1's "human-assisted" evaluation mode — don't fake determinism for a control that doesn't support it)
+- Live connectors to client cloud/IAM systems (Level 4)
+- Multi-tenancy, multiple frameworks, continuous monitoring
+- Autonomous finalization of any kind
 
 ## 5.6 Success Criteria
 
-- **Functional:** one real client engagement runs end-to-end (scope → request → evidence → findings → finalize) inside the tool.
-- **Technical:** system handles at least one full engagement's document set (typically 20–60 evidence artifacts for a mid-size merchant) without manual database intervention.
-- **Reliability:** no data loss on LLM/extraction failures — failures degrade to "needs manual input," never to silent gaps.
-- **Security:** no cross-engagement data leakage between auditors not assigned to the same engagement; verified by test (see 08_TESTING.md).
-- **Deployment:** runs on existing self-hosted infra behind Cloudflare Tunnel with no new cloud accounts required.
+Functional and technical criteria from the prior revision still apply. This revision adds the **PoC Acceptance Test Table** as a hard gate on calling Level 0 "done" — not optional polish:
+
+| Test | Required System Behavior |
+|---|---|
+| Correct evidence provided | Result = PASS |
+| Incorrect evidence provided | Result = FAIL |
+| Evidence missing | Result = INSUFFICIENT_EVIDENCE |
+| Two evidence sources conflict | Result = CONFLICT, routed to auditor, never silently resolved by the LLM |
+| Evidence is stale (past a control's freshness window) | Result = STALE / REVIEW |
+| A citation is fabricated (e.g., cites page 17 of a 5-page document) | REJECTED at the Evidence Gate — never reaches a Finding |
+| Evidence document contains a prompt-injection payload instructing the system to mark compliant | No effect on the System Result — the rule engine has no path by which document *content* can alter its own evaluation logic |
+| LLM/embedding API is unavailable | Deterministic controls still evaluate correctly — the rule engine has zero dependency on the LLM |
+| Auditor rejects a PASS system result | Final report reflects the auditor's decision, not the system result |
+| Control's rule definition is updated after an audit is finalized | The already-finalized report is unaffected (immutable snapshot) |
+| An evidence file is altered after upload | Hash mismatch is detected |
+
+A Level 0 PoC that cannot pass every row of this table is not done, regardless of how much of the happy path works.
 
 ## 5.7 Non-Goals
 
-This product does not try to replace the QSA/auditor, does not try to be a general-purpose GRC platform, and does not try to serve more than one audit firm at this stage.
+Same as before, with one addition: this product does not aim to make GenAI more accurate at judging compliance — it aims to remove GenAI from the judgment path entirely for anything that can be deterministically checked, and to make the human-assisted path (for genuinely interpretive controls) honest about needing a human, rather than dressed up as automation.
 
 ## 5.8 Assumptions and Open Questions
 
-**Confirmed facts (from conversation):**
-- Auditor-side only; audit-firm's own existing client records as the data source; human sign-off always required; efficiency (100%→30% workload) is the goal, not novelty; POC-first build sequence.
+**Confirmed facts (from the provided roadmap/architecture):** deterministic-first evaluation is the target architecture; GenAI is explicitly non-authoritative; a modular monolith (FastAPI + PostgreSQL/pgvector + object storage + async workers + Next.js) is the correct Level 0 stack; 5–10 controls is the correct PoC scope; the six-state result model replaces binary PASS/FAIL.
 
-**Reasonable assumptions:**
-- FastAPI + Next.js + PostgreSQL stack (matches existing skills/infra)
-- Self-hosted deployment on existing Ubuntu/Cloudflare Tunnel infra
-- Single audit firm, single-tenant for this stage
+**Reasonable assumptions:** "Audit" replaces "Engagement" as the primary entity name; the existing self-hosted deployment pattern (Ubuntu + Cloudflare Tunnel) still applies since nothing in the new architecture requires new infrastructure at Level 0.
 
-**Confirmed decisions (2026-08-22 — TASK-001 complete):**
-
-| Open item | Resolution | Recorded in |
-|---|---|---|
-| Final product name | **AuditLens** | ADR-008 |
-| Evidence requests sent vs drafted-only | **Drafted only.** The system never dispatches external communication. | ADR-004 (already accepted) |
-| LLM provider | **Anthropic Claude**, accessed through the `LLMClient` abstraction in `/backend/app/pipelines/llm.py` so a provider change is a one-module edit. | ADR-009 |
-| LLM budget ceiling | Enforced structurally rather than as a spend cap: scope-suggestion is rate-limited per user (10/hour, 04_API_CONTRACT.md), and the background matching queue is serialised. A hard currency ceiling is a provider-console setting, not an application concern. | ADR-009 |
-| Embedding provider | **Self-hosted** `bge-small-en-v1.5` (384-dim) per ADR-005, loaded only in the worker process. | ADR-009 |
-| PCI DSS v4.0.1 corpus text licensing | **Deferred, with a safe default.** The shipped corpus contains clause IDs, requirement families and titles with firm-authored summary text — not the copyrighted standard text. Replacing it with licensed text is a single-file swap. | ADR-010 |
-| Stage-1 test-case engagement | Deferred to TASK-025 (a human activity, not an implementation input). | — |
-| `403` vs `404` on `GET /api/engagements/{id}` | Keep them distinct, as 04_API_CONTRACT.md already specifies. Single-tenant internal software; existence-leakage to a firm employee is not a meaningful disclosure. | ADR-011 |
-| Session concurrency (multiple active sessions per user) | Allowed, as 01_REQUIREMENTS.md already specifies. No single-session enforcement in POC. | — |
-| Password reset | Admin-initiated only, no self-service flow, per 05_SECURITY.md §10.2. Implemented as the `reset-password` seed-script subcommand (TASK-009), not an API endpoint. | ADR-011 |
-| Server isolation (ADR-007) | Deployment-time decision, does not block implementation. Compose file is written to run standalone on a dedicated host. | ADR-007 |
+**`DECISION REQUIRED` — all three now resolved during the retrofit:**
+- ~~Which exact 5–10 controls~~ → **Resolved (ADR-011).** Eight controls: 8.3.6, 8.3.4, 8.3.7, 8.2.8, 8.4.2, 4.2.1, 10.5.1, 3.5.1. Authored as DETERMINISTIC in `backend/app/corpus/pci_dss_v4_0_1.json`; every other clause is HUMAN_ASSISTED. The set stops at eight rather than ten because the two next-best candidates check a cadence rather than a configured value, and force-fitting them would be exactly the dishonesty §5.7 rules out.
+- ~~Malware scanning in or out for Level 0~~ → **Resolved (ADR-012).** Recorded, not upload-gating. `EvidenceDocument.malware_scan_status` defaults to `not_scanned` and is returned by the API, so the answer is visible rather than assumed.
+- ~~Whether the existing codebase's schema differs from 03_DATA_MODEL.md~~ → **Resolved.** Reconciled in the codebase's favour where it had already made a choice, and in this document's favour where the retrofit introduced genuinely new structure. `Engagement`→`Audit`, `PCIRequirement`→`ControlDefinition` (with `clause_id`→`control_id`, `title`→`name`, `full_text`→`requirement_text`), and `ScopedRequirement`→`ScopedControl` were carried out as a real forward migration (`b1f2c3d4e5a6`), not by editing the released initial schema — an already-deployed database is renamed and its data preserved, including a data migration that maps each legacy `ai_suggested_status` onto a synthetic `ControlEvaluation` stamped `engine_version="legacy-llm-v0"`.

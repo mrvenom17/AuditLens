@@ -11,7 +11,7 @@ import type {
 } from "@/types/api";
 
 interface Props {
-  engagementId: string;
+  auditId: string;
   requests: EvidenceRequest[];
   hasConfirmedScope: boolean;
   readOnly: boolean;
@@ -33,7 +33,7 @@ const STATUS_LABELS: Record<EvidenceRequestStatus, string> = {
  * describes it that way.
  */
 export function EvidenceRequestsPanel({
-  engagementId,
+  auditId,
   requests,
   hasConfirmedScope,
   readOnly,
@@ -58,7 +58,7 @@ export function EvidenceRequestsPanel({
     setNotice(null);
     try {
       const result = await api.post<EvidenceRequestGenerateResult>(
-        `/api/engagements/${engagementId}/evidence-requests/generate`,
+        `/api/audits/${auditId}/evidence-requests/generate`,
       );
 
       const parts: string[] = [];
@@ -177,7 +177,7 @@ export function EvidenceRequestsPanel({
           {requests.map((request) => (
             <li key={request.id} className="request">
               <div className="request-head">
-                <span className="clause">{request.clause_id}</span>
+                <span className="clause">{request.control_id}</span>
                 <span className={`pill ${statusPill(request.status)}`}>
                   {STATUS_LABELS[request.status]}
                 </span>
@@ -195,7 +195,7 @@ export function EvidenceRequestsPanel({
                     onChange={(e) => setDraftText(e.target.value)}
                     maxLength={5000}
                     disabled={working}
-                    aria-label={`Description for clause ${request.clause_id}`}
+                    aria-label={`Description for clause ${request.control_id}`}
                   />
                   <div className="row">
                     <button

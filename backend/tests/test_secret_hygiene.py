@@ -26,7 +26,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session as DBSession
 
 from app.logging_setup import SecretRedactingFilter
-from app.models.enums import EngagementStatus, Role
+from app.models.enums import AuditStatus, Role
 from tests import filefixtures as ff
 
 PASSWORD = "correct-horse-battery-staple"
@@ -114,7 +114,7 @@ class TestNoSecretsInLogsAfterAFullRequestCycle:
 
         assert token not in captured(caplog)
 
-    def test_engagement_creation_does_not_log_sensitive_profile_fields(
+    def test_audit_creation_does_not_log_sensitive_profile_fields(
         self, api_client: TestClient, make_user: Any, caplog: pytest.LogCaptureFixture
     ) -> None:
         """`tech_stack_summary` is Sensitive (03_DATA_MODEL.md §8.4) and
@@ -124,7 +124,7 @@ class TestNoSecretsInLogsAfterAFullRequestCycle:
 
         with caplog.at_level(logging.DEBUG):
             response = api_client.post(
-                "/api/engagements",
+                "/api/audits",
                 json={
                     "client_name": SENSITIVE_CLIENT,
                     "entity_type": "merchant",
@@ -140,19 +140,19 @@ class TestNoSecretsInLogsAfterAFullRequestCycle:
         self,
         api_client: TestClient,
         make_user: Any,
-        make_engagement: Any,
+        make_audit: Any,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """`extracted_text` is Sensitive and is the largest concentration of
         client-confidential material in the system."""
         secret_content = "CANARY-EVIDENCE-root-password-is-hunter2"
         auditor = make_user(Role.auditor, password=PASSWORD)
-        engagement = make_engagement(auditor, status=EngagementStatus.in_progress)
+        audit = make_audit(auditor, status=AuditStatus.in_progress)
         login(api_client, auditor)
 
         with caplog.at_level(logging.DEBUG):
             response = api_client.post(
-                f"/api/engagements/{engagement.id}/evidence-documents",
+                f"/api/audits/{audit.id}/evidence-documents",
                 files={"file": ("e.pdf", ff.valid_pdf(secret_content), "application/pdf")},
             )
         assert response.status_code == 201
@@ -164,7 +164,7 @@ class TestNoSecretsInLogsAfterAFullRequestCycle:
         api_client: TestClient,
         db: DBSession,
         make_user: Any,
-        make_engagement: Any,
+        make_audit: Any,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         import uuid
@@ -174,10 +174,10 @@ class TestNoSecretsInLogsAfterAFullRequestCycle:
 
         secret_content = "CANARY-EXTRACTED-cardholder-database-credentials"
         auditor = make_user(Role.auditor, password=PASSWORD)
-        engagement = make_engagement(auditor, status=EngagementStatus.in_progress)
+        audit = make_audit(auditor, status=AuditStatus.in_progress)
         login(api_client, auditor)
         created = api_client.post(
-            f"/api/engagements/{engagement.id}/evidence-documents",
+            f"/api/audits/{audit.id}/evidence-documents",
             files={"file": ("e.pdf", ff.valid_pdf(secret_content), "application/pdf")},
         ).json()
         document = db.get(EvidenceDocument, uuid.UUID(created["id"]))
@@ -197,18 +197,21 @@ class TestNoSecretsInLogsAfterAFullRequestCycle:
         self,
         db: DBSession,
         make_user: Any,
-        make_engagement: Any,
-        make_requirement: Any,
-        make_scoped_requirement: Any,
+        make_audit: Any,
+        make_deterministic_control: Any,
+        make_evaluation: Any,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """05_SECURITY.md §10.7: "full LLM prompts or completions (log only
-        metadata: duration, status, token count)"."""
-        import json
+        metadata: duration, status, token count)".
 
-        from app.models.evidence import EvidenceChunk, EvidenceDocument
-        from app.pipelines import matching
+        The call site moved with the retrofit — the LLM no longer judges
+        compliance, it drafts an explanation of an already-determined result —
+        but the rule is unchanged, and the evidence values in that prompt are
+        still client configuration detail.
+        """
         from app.pipelines.llm import LLMResponse, set_llm_client
+        from app.services.genai_service import draft_explanation
 
         secret_evidence = "CANARY-PROMPT-internal-network-10.0.0.0-8-admin-creds"
 
@@ -218,13 +221,7 @@ class TestNoSecretsInLogsAfterAFullRequestCycle:
             ) -> LLMResponse:
                 assert secret_evidence in prompt, "the test's premise requires it be sent"
                 return LLMResponse(
-                    text=json.dumps(
-                        {
-                            "status": "satisfied",
-                            "confidence": 0.9,
-                            "rationale": "CANARY-COMPLETION-the-model-said-this",
-                        }
-                    ),
+                    text="CANARY-COMPLETION-the-model-said-this",
                     input_tokens=100,
                     output_tokens=20,
                 )
@@ -232,47 +229,30 @@ class TestNoSecretsInLogsAfterAFullRequestCycle:
         set_llm_client(RecordingLLM())
         try:
             auditor = make_user(Role.auditor)
-            engagement = make_engagement(auditor, status=EngagementStatus.in_progress)
-            requirement = make_requirement(clause_id="1.2.1")
-            scoped = make_scoped_requirement(engagement, confirmed=True, requirement=requirement)
-            document = EvidenceDocument(
-                engagement_id=engagement.id,
-                original_filename="e.pdf",
-                content_hash="d" * 64,
-                storage_path="unused",
-                mime_type="application/pdf",
-                size_bytes=10,
-                uploaded_by=auditor.id,
-                extraction_status="complete",
-            )
-            db.add(document)
-            db.flush()
-            chunk = EvidenceChunk(
-                evidence_document_id=document.id,
-                chunk_index=0,
-                content=secret_evidence,
-                location="page 1",
-            )
-            db.add(chunk)
-            db.flush()
-
-            match = matching.RetrievedMatch(
-                scoped_requirement=scoped,
-                requirement=requirement,
-                chunks=[chunk],
-                similarity=1.0,
+            audit = make_audit(auditor, status=AuditStatus.in_progress)
+            control = make_deterministic_control()
+            evaluation = make_evaluation(
+                audit,
+                control,
+                evidence_locations=[
+                    {
+                        "fact": "minimum_password_length",
+                        "value": secret_evidence,
+                        "location": "page 1",
+                    }
+                ],
             )
             with caplog.at_level(logging.DEBUG):
-                draft = matching.generate_finding(match, document.id)
+                explanation = draft_explanation(evaluation, control)
         finally:
             set_llm_client(None)
 
         output = captured(caplog)
         assert secret_evidence not in output, "the prompt reached the logs"
         assert "CANARY-COMPLETION-the-model-said-this" not in output, "the completion did"
-        # The rationale is stored on the Finding, where it belongs — the rule is
-        # about logs, not about the record.
-        assert draft.rationale == "CANARY-COMPLETION-the-model-said-this"
+        # The explanation is stored on the Finding, where it belongs — the rule
+        # is about logs, not about the record.
+        assert explanation == "CANARY-COMPLETION-the-model-said-this"
 
     def test_a_500_response_exposes_no_internals(self, db: DBSession) -> None:
         """02_ARCHITECTURE.md §7.7: the client only ever sees a generic message

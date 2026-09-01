@@ -1,6 +1,6 @@
-"""Engagement and assignment data access.
+"""Audit and assignment data access.
 
-Every read here is scoped through `EngagementScopedRepository`. Where a method
+Every read here is scoped through `AuditScopedRepository`. Where a method
 looks like it fetches by primary key, note that the primary key is combined with
 the scope filter in one statement — a resource ID in a URL is never sufficient
 authorization on its own (03_DATA_MODEL.md §8.2).
@@ -14,15 +14,15 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as DBSession
 
-from app.models.engagement import ClientProfileDocument, Engagement, EngagementAssignment
-from app.models.enums import EngagementStatus, EntityType, FindingStatus, MerchantLevel
-from app.repositories.base import EngagementScopedRepository
+from app.models.audit import Audit, AuditAssignment, ClientProfileDocument
+from app.models.enums import AuditStatus, EntityType, FindingStatus, MerchantLevel
+from app.repositories.base import AuditScopedRepository
 
 if TYPE_CHECKING:
     from app.api.deps import Actor
 
 
-class EngagementRepository(EngagementScopedRepository):
+class AuditRepository(AuditScopedRepository):
     def create(
         self,
         *,
@@ -32,127 +32,123 @@ class EngagementRepository(EngagementScopedRepository):
         annual_transaction_volume: int | None,
         existing_saq_type: str | None,
         tech_stack_summary: str | None,
+        company_profile: dict[str, Any],
         created_by: uuid.UUID,
-    ) -> Engagement:
-        engagement = Engagement(
+    ) -> Audit:
+        audit = Audit(
             client_name=client_name,
             entity_type=entity_type,
             merchant_level=merchant_level,
             annual_transaction_volume=annual_transaction_volume,
             existing_saq_type=existing_saq_type,
             tech_stack_summary=tech_stack_summary,
-            status=EngagementStatus.intake,
+            company_profile=company_profile,
+            status=AuditStatus.intake,
             created_by=created_by,
         )
-        self._db.add(engagement)
+        self._db.add(audit)
         self._db.flush()
-        return engagement
+        return audit
 
-    def get_scoped(self, engagement_id: uuid.UUID, actor: Actor) -> Engagement | None:
+    def get_scoped(self, audit_id: uuid.UUID, actor: Actor) -> Audit | None:
         """Fetch by id *and* access in a single statement.
 
         This is the method that makes the ownership rule cheap to obey: there is
         no unscoped `get` on this repository to reach for by accident.
         """
-        stmt = self._scoped(
-            select(Engagement).where(Engagement.id == engagement_id), Engagement.id, actor
-        )
+        stmt = self._scoped(select(Audit).where(Audit.id == audit_id), Audit.id, actor)
         return self._db.scalar(stmt)
 
     def list_scoped(
         self,
         actor: Actor,
         *,
-        status: EngagementStatus | None = None,
+        status: AuditStatus | None = None,
         limit: int = 50,
         offset: int = 0,
-    ) -> tuple[list[Engagement], int]:
-        stmt = select(Engagement)
-        count_stmt = select(func.count()).select_from(Engagement)
+    ) -> tuple[list[Audit], int]:
+        stmt = select(Audit)
+        count_stmt = select(func.count()).select_from(Audit)
 
         if status is not None:
-            stmt = stmt.where(Engagement.status == status)
-            count_stmt = count_stmt.where(Engagement.status == status)
+            stmt = stmt.where(Audit.status == status)
+            count_stmt = count_stmt.where(Audit.status == status)
 
         # The count is scoped identically to the page. A total computed without
-        # the filter would disclose how many engagements exist firm-wide.
-        stmt = self._scoped(stmt, Engagement.id, actor)
-        count_stmt = self._scoped(count_stmt, Engagement.id, actor)
+        # the filter would disclose how many audits exist firm-wide.
+        stmt = self._scoped(stmt, Audit.id, actor)
+        count_stmt = self._scoped(count_stmt, Audit.id, actor)
 
-        stmt = stmt.order_by(Engagement.created_at.desc()).limit(limit).offset(offset)
+        stmt = stmt.order_by(Audit.created_at.desc()).limit(limit).offset(offset)
         total = int(self._db.scalar(count_stmt) or 0)
         return list(self._db.scalars(stmt).all()), total
 
-    def set_status(self, engagement: Engagement, status: EngagementStatus) -> None:
-        engagement.status = status
+    def set_status(self, audit: Audit, status: AuditStatus) -> None:
+        audit.status = status
         self._db.flush()
 
-    def counts(self, engagement_id: uuid.UUID) -> dict[str, int]:
+    def counts(self, audit_id: uuid.UUID) -> dict[str, int]:
         """The queue summary 04_API_CONTRACT.md requires on the detail response.
 
         No scope filter here on purpose: the caller has already passed the
-        access check for this engagement, and adding a second filter would imply
+        access check for this audit, and adding a second filter would imply
         the id could arrive unchecked — which it cannot, because every route
-        reaches this through `EngagementService.get`.
+        reaches this through `AuditService.get`.
         """
         from app.models.evidence import EvidenceDocument
         from app.models.finding import Finding
-        from app.models.scoping import EvidenceRequest, ScopedRequirement
+        from app.models.scoping import EvidenceRequest, ScopedControl
 
         def _count(model: Any, *conditions: Any) -> int:
-            # `model` is any engagement-scoped ORM class; every one of them has
-            # an `engagement_id` column by construction (03_DATA_MODEL.md §8.1).
+            # `model` is any audit-scoped ORM class; every one of them has
+            # an `audit_id` column by construction (03_DATA_MODEL.md §8.1).
             stmt = (
                 select(func.count())
                 .select_from(model)
-                .where(model.engagement_id == engagement_id, *conditions)
+                .where(model.audit_id == audit_id, *conditions)
             )
             return int(self._db.scalar(stmt) or 0)
 
         return {
-            "scoped_requirements": _count(ScopedRequirement),
-            "confirmed_requirements": _count(
-                ScopedRequirement, ScopedRequirement.confirmed.is_(True)
-            ),
+            "scoped_controls": _count(ScopedControl),
+            "confirmed_requirements": _count(ScopedControl, ScopedControl.confirmed.is_(True)),
             "evidence_requests": _count(EvidenceRequest),
             "evidence_documents": _count(EvidenceDocument),
             "findings_total": _count(Finding),
-            "findings_draft": _count(Finding, Finding.status == FindingStatus.draft),
+            "findings_pending_review": _count(
+                Finding, Finding.status == FindingStatus.pending_review
+            ),
             "findings_approved": _count(Finding, Finding.status == FindingStatus.approved),
             "findings_rejected": _count(Finding, Finding.status == FindingStatus.rejected),
-            "findings_needing_manual_review": _count(
-                Finding, Finding.needs_manual_review.is_(True)
+            "findings_needing_more_evidence": _count(
+                Finding, Finding.status == FindingStatus.needs_more_evidence
             ),
         }
 
     # --- Assignments ---------------------------------------------------------
 
-    def assign(self, engagement_id: uuid.UUID, user_id: uuid.UUID) -> EngagementAssignment:
-        assignment = EngagementAssignment(engagement_id=engagement_id, user_id=user_id)
+    def assign(self, audit_id: uuid.UUID, user_id: uuid.UUID) -> AuditAssignment:
+        assignment = AuditAssignment(audit_id=audit_id, user_id=user_id)
         self._db.add(assignment)
         self._db.flush()
         return assignment
 
-    def get_assignment(
-        self, engagement_id: uuid.UUID, user_id: uuid.UUID
-    ) -> EngagementAssignment | None:
+    def get_assignment(self, audit_id: uuid.UUID, user_id: uuid.UUID) -> AuditAssignment | None:
         return self._db.scalar(
-            select(EngagementAssignment).where(
-                EngagementAssignment.engagement_id == engagement_id,
-                EngagementAssignment.user_id == user_id,
+            select(AuditAssignment).where(
+                AuditAssignment.audit_id == audit_id,
+                AuditAssignment.user_id == user_id,
             )
         )
 
-    def list_assignments(self, engagement_id: uuid.UUID) -> list[EngagementAssignment]:
+    def list_assignments(self, audit_id: uuid.UUID) -> list[AuditAssignment]:
         return list(
             self._db.scalars(
-                select(EngagementAssignment).where(
-                    EngagementAssignment.engagement_id == engagement_id
-                )
+                select(AuditAssignment).where(AuditAssignment.audit_id == audit_id)
             ).all()
         )
 
-    def remove_assignment(self, assignment: EngagementAssignment) -> None:
+    def remove_assignment(self, assignment: AuditAssignment) -> None:
         """The one deletion in the system.
 
         Permitted because an assignment is an access-control record, not an
@@ -167,7 +163,7 @@ class EngagementRepository(EngagementScopedRepository):
 class ClientProfileDocumentRepository:
     """Firm-internal client-file documents (ADR-011 item 6).
 
-    Not engagement-scoped: these are the firm's own records, readable by any
+    Not audit-scoped: these are the firm's own records, readable by any
     authenticated staff member in this single-tenant deployment.
     """
 
@@ -198,7 +194,7 @@ class ClientProfileDocumentRepository:
         return self._db.get(ClientProfileDocument, document_id)
 
     def count_existing(self, document_ids: list[uuid.UUID]) -> int:
-        """Used to validate `source_document_ids` at engagement creation.
+        """Used to validate `source_document_ids` at audit creation.
 
         04_API_CONTRACT.md describes this as a defensive check against
         ID-guessing rather than a cross-tenant boundary — there is one firm.

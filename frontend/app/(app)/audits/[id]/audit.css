@@ -1,8 +1,8 @@
-/* Engagement workspace. Rail carries context and progress; the main column is
+/* Audit workspace. Rail carries context and progress; the main column is
  * the work surface. The rail is deliberately narrow — it answers "how much is
  * left", not "what do I do next". */
 
-.engagement-layout {
+.audit-layout {
   display: grid;
   grid-template-columns: var(--rail) minmax(0, 1fr);
   gap: 1.25rem;
@@ -84,7 +84,7 @@
 
 
 @media (max-width: 62rem) {
-  .engagement-layout {
+  .audit-layout {
     grid-template-columns: minmax(0, 1fr);
   }
 

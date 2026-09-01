@@ -4,8 +4,11 @@ import { useState } from "react";
 
 import { ApiError, api } from "@/lib/api";
 import {
-  COMPLIANCE_STATUS_LABELS,
-  type ComplianceStatus,
+  GATE_CHECK_LABELS,
+  RESULT_LABELS,
+  STRENGTH_FACTOR_LABELS,
+  STRENGTH_LABELS,
+  type EvaluationResult,
   type Finding,
   type FindingHistoryEntry,
 } from "@/types/api";
@@ -18,49 +21,59 @@ interface Props {
   onReviewed: () => void;
 }
 
-const STATUS_OPTIONS: ComplianceStatus[] = [
-  "satisfied",
-  "partial",
-  "not_satisfied",
-  "not_applicable",
+const RESULT_OPTIONS: EvaluationResult[] = [
+  "PASS",
+  "FAIL",
+  "PARTIAL",
+  "INSUFFICIENT_EVIDENCE",
+  "CONFLICT",
+  "NOT_APPLICABLE",
 ];
 
 /**
- * One finding, as a complete decision unit.
+ * One finding, as a complete decision unit (TASK-114).
  *
- * The auditor's job here is "decide this one, move on", so everything needed
- * for that decision is in the card: the clause, what the machine said, what a
- * human already said if anyone has, and the actions.
+ * The card is laid out in the order an auditor actually decides: what the rule
+ * required, what the evidence literally said, what the engine therefore
+ * concluded, whether that conclusion could be verified — and only then the AI's
+ * plain-English gloss, which is the least load-bearing thing on the screen.
  *
- * The provenance rule does its real work here. The AI block carries the
- * reserved hue and a mono attribution; the human determination carries a status
- * rule. When a human has ruled, the AI block dims but never disappears —
- * 01_REQUIREMENTS.md requires the original suggestion be retained even when
- * overridden, and hiding it would quietly break the audit trail the product
- * exists to produce.
+ * Three separations are structural here, not cosmetic:
+ *
+ * 1. **Engine vs AI.** The system result sits in `.engine`; the explanation sits
+ *    in `.machine` with the reserved AI hue. They never share a treatment,
+ *    because the product's whole claim is that they are different kinds of
+ *    claim.
+ * 2. **Machine vs human.** `system_result` and `auditor_decision` are rendered
+ *    as separate rows and are never merged, matching the API contract that
+ *    keeps them separate fields.
+ * 3. **Verified vs not.** A gate-unverified result gets the `.unverified`
+ *    treatment — the loudest in the stylesheet — because 01_REQUIREMENTS.md
+ *    requires it be unmistakable from a normally-gated one.
  */
 export function FindingCard({ finding, canOverride, readOnly, onReviewed }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [mode, setMode] = useState<"idle" | "edit" | "reject">("idle");
-  const [editedStatus, setEditedStatus] = useState<ComplianceStatus>(
-    finding.ai_suggested_status ?? "partial",
-  );
+  const [mode, setMode] = useState<"idle" | "override" | "reject" | "more">("idle");
+  const [decision, setDecision] = useState<EvaluationResult>(finding.system_result);
   const [note, setNote] = useState("");
   const [history, setHistory] = useState<FindingHistoryEntry[] | null>(null);
 
-  const decided = finding.status !== "draft";
-  // A decided finding may only be changed by a Reviewer, and 01_REQUIREMENTS.md
-  // logs that change as an override rather than as a fresh decision.
+  const decided = finding.status !== "pending_review";
+  // A decided finding may only be changed by a Reviewer, and that change is
+  // logged as an override rather than as a fresh decision.
   const actionable = !readOnly && (!decided || canOverride);
 
-  async function submit(action: "accept" | "edit" | "reject") {
+  async function submit(
+    action: "approve" | "reject" | "request_more_evidence",
+    auditorDecision?: EvaluationResult,
+  ) {
     setBusy(true);
     setError(null);
     try {
       await api.patch(`/api/findings/${finding.id}/review`, {
         action,
-        edited_status: action === "edit" ? editedStatus : null,
+        auditor_decision: auditorDecision ?? null,
         note: note.trim() || null,
       });
       setMode("idle");
@@ -78,9 +91,7 @@ export function FindingCard({ finding, canOverride, readOnly, onReviewed }: Prop
       return;
     }
     try {
-      setHistory(
-        await api.get<FindingHistoryEntry[]>(`/api/findings/${finding.id}/history`),
-      );
+      setHistory(await api.get<FindingHistoryEntry[]>(`/api/findings/${finding.id}/history`));
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.displayMessage : "Could not load history.");
     }
@@ -89,24 +100,40 @@ export function FindingCard({ finding, canOverride, readOnly, onReviewed }: Prop
   return (
     <article className={`finding ${decided ? "finding-decided" : ""}`}>
       <header className="finding-head">
-        <span className="clause finding-clause">{finding.clause_id}</span>
+        <span className="clause finding-clause">{finding.control_id}</span>
 
         <div className="row wrap grow">
           {decided ? (
-            <span
-              className={`pill pill-${finding.final_status ?? "not_applicable"}`}
-            >
+            <span className={`pill pill-${finding.auditor_decision ?? "neutral"}`}>
               {finding.status === "rejected"
                 ? "Rejected"
-                : COMPLIANCE_STATUS_LABELS[finding.final_status ?? "not_applicable"]}
+                : finding.status === "needs_more_evidence"
+                  ? "More evidence requested"
+                  : RESULT_LABELS[finding.auditor_decision ?? "NOT_APPLICABLE"]}
             </span>
           ) : (
             <span className="pill pill-neutral">Awaiting review</span>
           )}
 
-          {finding.needs_manual_review && !decided && (
-            <span className="pill pill-attention">Needs a closer look</span>
+          {finding.is_override && (
+            <span className="pill pill-attention">Overrode the system result</span>
           )}
+          {finding.unverified_by_gate && (
+            <span className="pill pill-failed">Unverified</span>
+          )}
+          {finding.stale_evidence && (
+            <span className="pill pill-attention">Stale evidence</span>
+          )}
+          <span
+            className={`pill pill-strength-${finding.evidence_strength}`}
+            title={
+              finding.strength_factors
+                .map((f) => STRENGTH_FACTOR_LABELS[f] ?? f)
+                .join("; ") || undefined
+            }
+          >
+            {STRENGTH_LABELS[finding.evidence_strength]} evidence
+          </span>
         </div>
 
         <button
@@ -119,68 +146,148 @@ export function FindingCard({ finding, canOverride, readOnly, onReviewed }: Prop
         </button>
       </header>
 
-      {/* --- What the machine said. Never a determination. ------------------ */}
-      <div className={`machine finding-machine ${decided ? "machine-superseded" : ""}`}>
-        <div className="machine-label">
-          <span aria-hidden="true">◆</span>
-          AI draft{decided ? " · superseded" : ""}
+      {/* --- What is being tested. Before any verdict. ---------------------- */}
+      <div className="requirement">
+        <p className="small">
+          <strong>{finding.control_name}</strong>
+        </p>
+        <p className="small">{finding.requirement_text}</p>
+        {finding.assessment_procedures.length > 0 && (
+          <details className="procedures">
+            <summary className="tiny">
+              Assessment procedure ({finding.assessment_procedures.length} steps)
+            </summary>
+            <ol className="tiny">
+              {finding.assessment_procedures.map((step) => (
+                <li key={step}>{step}</li>
+              ))}
+            </ol>
+          </details>
+        )}
+      </div>
+
+      {/* --- What the engine determined, mechanically. --------------------- */}
+      <div className="engine finding-machine">
+        <div className="engine-label">
+          <span aria-hidden="true">▪</span>
+          System result · rule engine v{finding.engine_version}
+          {!finding.llm_involved && " · no AI involved"}
         </div>
 
-        {finding.ai_suggested_status === null ? (
-          <p className="small">
-            No suggestion available — the analysis service could not assess this
-            evidence. Set the status yourself using Edit.
-          </p>
-        ) : (
-          <>
-            <p className="small finding-machine-status">
-              Suggested <strong>{COMPLIANCE_STATUS_LABELS[finding.ai_suggested_status]}</strong>
-              {finding.ai_confidence !== null && (
-                <>
-                  {" "}
-                  at{" "}
-                  <span className="mono">
-                    {(finding.ai_confidence * 100).toFixed(0)}%
-                  </span>{" "}
-                  confidence
-                </>
-              )}
-            </p>
-            {finding.ai_rationale && (
-              // Rendered as text. This is model output derived from an
-              // untrusted document and goes through the same escaping path as
-              // any other content — never dangerouslySetInnerHTML
-              // (05_SECURITY.md §10.5).
-              <p className="small">{finding.ai_rationale}</p>
-            )}
-          </>
+        <p className="small">
+          <strong>{RESULT_LABELS[finding.system_result]}</strong>
+          <span className="muted tiny"> · {finding.evaluation_mode.toLowerCase()}</span>
+        </p>
+
+        {finding.rules_used.length > 0 && (
+          <div className="engine-rule">
+            {finding.rules_used.map((rule, i) => (
+              <div key={i}>
+                {String(rule.fact)} {String(rule.operator)} {JSON.stringify(rule.expected)}
+              </div>
+            ))}
+          </div>
         )}
 
-        {finding.citations.length > 0 && (
+        {finding.evidence_locations.length > 0 && (
           <p className="tiny finding-citations">
-            Cited:{" "}
-            {finding.citations.map((c, i) => (
-              <span key={`${c.evidence_document_id}-${c.location}`}>
+            Observed:{" "}
+            {finding.evidence_locations.map((c, i) => (
+              <span key={`${c.evidence_document_id}-${c.location}-${i}`}>
                 {i > 0 && ", "}
-                <a href={`/api/evidence-documents/${c.evidence_document_id}/download`} download>
-                  {c.location}
-                </a>
+                <span className="mono">
+                  {c.fact} = {c.value}
+                </span>{" "}
+                {c.evidence_document_id ? (
+                  <a
+                    href={`/api/evidence-documents/${c.evidence_document_id}/download`}
+                    download
+                  >
+                    ({c.location})
+                  </a>
+                ) : (
+                  <>({c.location})</>
+                )}
+                {c.source_hash && (
+                  <span className="muted" title={`SHA-256 ${c.source_hash}`}>
+                    {" "}
+                    sha256:{c.source_hash.slice(0, 8)}
+                  </span>
+                )}
               </span>
             ))}
           </p>
         )}
+
+        {finding.strength_factors.length > 0 && (
+          <p className="tiny">
+            <strong>Evidence strength:</strong>{" "}
+            {STRENGTH_LABELS[finding.evidence_strength].toLowerCase()} —{" "}
+            {finding.strength_factors
+              .map((f) => STRENGTH_FACTOR_LABELS[f] ?? f)
+              .join("; ")}
+            .
+          </p>
+        )}
+
+        {finding.contradictions && finding.contradictions.length > 0 && (
+          <p className="tiny">
+            <strong>Evidence disagrees.</strong> Two or more documents give
+            different values for the same setting; this has to be resolved by a
+            person, not by the system.
+          </p>
+        )}
       </div>
 
-      {/* --- What a human determined. ---------------------------------------- */}
+      {/* --- Whether that result could be verified at all. ------------------ */}
+      {finding.unverified_by_gate && (
+        <div className="unverified finding-machine">
+          <div className="unverified-label">
+            <span aria-hidden="true">▲</span>
+            Evidence gate: {finding.gate_status}
+          </div>
+          <p className="small">
+            The system could not verify this evaluation. Assess this control
+            manually — do not rely on the result above.
+          </p>
+          {finding.gate_checks_failed.length > 0 && (
+            <ul className="gate-checks tiny">
+              {finding.gate_checks_failed.map((check) => (
+                <li key={check}>{GATE_CHECK_LABELS[check] ?? check}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {/* --- The AI's gloss. Never a determination. ------------------------- */}
+      {finding.ai_explanation && (
+        <div className={`machine finding-machine ${decided ? "machine-superseded" : ""}`}>
+          <div className="machine-label">
+            <span aria-hidden="true">◆</span>
+            AI explanation · not a determination
+          </div>
+          {/* Rendered as text. This is model output derived from an untrusted
+              document and goes through the same escaping path as any other
+              content — never dangerouslySetInnerHTML (05_SECURITY.md §10.5). */}
+          <p className="small">{finding.ai_explanation}</p>
+        </div>
+      )}
+
+      {/* --- What a human decided. ------------------------------------------ */}
       {decided && (
         <div
-          className={`determination determination-${finding.final_status ?? "not_applicable"} finding-determination`}
+          className={`determination determination-${finding.auditor_decision ?? "NOT_APPLICABLE"} finding-determination`}
         >
           <p className="small">
             <strong>
               {finding.status === "rejected"
                 ? "Rejected by a reviewer"
-                : `Determined ${COMPLIANCE_STATUS_LABELS[finding.final_status ?? "not_applicable"].toLowerCase()}`}
+                : finding.status === "needs_more_evidence"
+                  ? "More evidence requested"
+                  : `Auditor decided ${RESULT_LABELS[
+                      finding.auditor_decision ?? "NOT_APPLICABLE"
+                    ].toLowerCase()}`}
             </strong>
             {finding.reviewed_at && (
               <span className="muted mono tiny">
@@ -189,6 +296,13 @@ export function FindingCard({ finding, canOverride, readOnly, onReviewed }: Prop
               </span>
             )}
           </p>
+          {finding.is_override && (
+            <p className="tiny">
+              This differs from the system result of{" "}
+              <strong>{RESULT_LABELS[finding.system_result]}</strong>. Both are
+              kept on the record.
+            </p>
+          )}
           {finding.review_note && <p className="small">{finding.review_note}</p>}
         </div>
       )}
@@ -202,7 +316,10 @@ export function FindingCard({ finding, canOverride, readOnly, onReviewed }: Prop
               <strong>{entry.action}</strong>
               {": "}
               {entry.previous_status} → {entry.new_status}
-              {entry.new_final_status && ` (${entry.new_final_status})`}
+              {entry.new_decision && ` (${entry.new_decision})`}
+              {entry.system_result && entry.new_decision !== entry.system_result && (
+                <span className="muted"> · system said {entry.system_result}</span>
+              )}
               {entry.note && <div className="muted">{entry.note}</div>}
             </li>
           ))}
@@ -215,28 +332,37 @@ export function FindingCard({ finding, canOverride, readOnly, onReviewed }: Prop
         </div>
       )}
 
-      {/* --- Actions ---------------------------------------------------------- */}
+      {/* --- Actions -------------------------------------------------------- */}
       {actionable && (
         <div className="finding-actions">
           {mode === "idle" && (
             <>
-              {finding.ai_suggested_status !== null && (
-                <button
-                  type="button"
-                  className="btn btn-sm btn-primary"
-                  onClick={() => submit("accept")}
-                  disabled={busy}
-                >
-                  {busy ? "Saving…" : decided ? "Accept AI draft" : "Accept"}
-                </button>
-              )}
+              <button
+                type="button"
+                className="btn btn-sm btn-primary"
+                onClick={() => submit("approve")}
+                disabled={busy}
+              >
+                {busy ? "Saving…" : `Agree — ${RESULT_LABELS[finding.system_result]}`}
+              </button>
               <button
                 type="button"
                 className="btn btn-sm"
-                onClick={() => setMode("edit")}
+                onClick={() => {
+                  setDecision(finding.system_result);
+                  setMode("override");
+                }}
                 disabled={busy}
               >
-                {finding.ai_suggested_status === null ? "Set status" : "Edit"}
+                Record a different result
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={() => setMode("more")}
+                disabled={busy}
+              >
+                Request more evidence
               </button>
               <button
                 type="button"
@@ -254,22 +380,22 @@ export function FindingCard({ finding, canOverride, readOnly, onReviewed }: Prop
             </>
           )}
 
-          {mode === "edit" && (
+          {mode === "override" && (
             <div className="finding-form">
               <div className="row wrap">
                 <div>
-                  <label htmlFor={`status-${finding.id}`} className="tiny">
-                    Determination
+                  <label htmlFor={`decision-${finding.id}`} className="tiny">
+                    Your decision
                   </label>
                   <select
-                    id={`status-${finding.id}`}
-                    value={editedStatus}
-                    onChange={(e) => setEditedStatus(e.target.value as ComplianceStatus)}
+                    id={`decision-${finding.id}`}
+                    value={decision}
+                    onChange={(e) => setDecision(e.target.value as EvaluationResult)}
                     disabled={busy}
                   >
-                    {STATUS_OPTIONS.map((s) => (
-                      <option key={s} value={s}>
-                        {COMPLIANCE_STATUS_LABELS[s]}
+                    {RESULT_OPTIONS.map((r) => (
+                      <option key={r} value={r}>
+                        {RESULT_LABELS[r]}
                       </option>
                     ))}
                   </select>
@@ -277,24 +403,26 @@ export function FindingCard({ finding, canOverride, readOnly, onReviewed }: Prop
               </div>
               <div>
                 <label htmlFor={`note-${finding.id}`} className="tiny">
-                  Note (optional)
+                  Why does this differ from the system result?
                 </label>
                 <textarea
                   id={`note-${finding.id}`}
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
                   disabled={busy}
-                  placeholder="What in the evidence supports this?"
+                  placeholder="Required when overriding. The system keeps both answers."
                 />
               </div>
               <div className="row">
                 <button
                   type="button"
                   className="btn btn-sm btn-primary"
-                  onClick={() => submit("edit")}
-                  disabled={busy}
+                  onClick={() => submit("approve", decision)}
+                  // The server requires a note on an override; requiring it
+                  // here too means the auditor is not told off after the fact.
+                  disabled={busy || (decision !== finding.system_result && !note.trim())}
                 >
-                  {busy ? "Saving…" : "Save determination"}
+                  {busy ? "Saving…" : "Save decision"}
                 </button>
                 <button
                   type="button"
@@ -308,30 +436,36 @@ export function FindingCard({ finding, canOverride, readOnly, onReviewed }: Prop
             </div>
           )}
 
-          {mode === "reject" && (
+          {(mode === "reject" || mode === "more") && (
             <div className="finding-form">
               <div>
-                <label htmlFor={`reject-${finding.id}`} className="tiny">
-                  Why is this being rejected?
+                <label htmlFor={`reason-${finding.id}`} className="tiny">
+                  {mode === "reject"
+                    ? "Why is this being rejected?"
+                    : "What further evidence is needed?"}
                 </label>
                 <textarea
-                  id={`reject-${finding.id}`}
+                  id={`reason-${finding.id}`}
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
                   disabled={busy}
-                  placeholder="Required. A rejection has to be explainable."
+                  placeholder="Required. This has to be explainable."
                 />
               </div>
               <div className="row">
                 <button
                   type="button"
-                  className="btn btn-sm btn-danger"
-                  onClick={() => submit("reject")}
-                  // The server requires a note on rejection; requiring it here
-                  // too means the auditor is not told off after the fact.
+                  className={`btn btn-sm ${mode === "reject" ? "btn-danger" : "btn-primary"}`}
+                  onClick={() =>
+                    submit(mode === "reject" ? "reject" : "request_more_evidence")
+                  }
                   disabled={busy || !note.trim()}
                 >
-                  {busy ? "Saving…" : "Reject finding"}
+                  {busy
+                    ? "Saving…"
+                    : mode === "reject"
+                      ? "Reject finding"
+                      : "Request evidence"}
                 </button>
                 <button
                   type="button"

@@ -1,7 +1,7 @@
-import type { EngagementDetail } from "@/types/api";
+import type { AuditDetail } from "@/types/api";
 
 /**
- * Engagement context rail.
+ * Audit context rail.
  *
  * The numbers here are the ones that answer "how much is left" — the question
  * an auditor working a queue asks constantly. Two are surfaced as attention
@@ -9,8 +9,8 @@ import type { EngagementDetail } from "@/types/api";
  * needs_manual_review and extraction_failed be first-class UI states rather
  * than edge cases discovered by reading a table.
  */
-export function EngagementRail({ engagement }: { engagement: EngagementDetail }) {
-  const c = engagement.counts;
+export function AuditRail({ audit }: { audit: AuditDetail }) {
+  const c = audit.counts;
 
   const reviewed = c.findings_approved + c.findings_rejected;
   const progress = c.findings_total === 0 ? 0 : reviewed / c.findings_total;
@@ -61,7 +61,7 @@ export function EngagementRail({ engagement }: { engagement: EngagementDetail })
           <h3>Counts</h3>
         </div>
         <dl className="rail-stats">
-          <Stat label="Requirements in scope" value={c.scoped_requirements} />
+          <Stat label="Requirements in scope" value={c.scoped_controls} />
           <Stat label="Confirmed" value={c.confirmed_requirements} />
           <Stat label="Evidence requests" value={c.evidence_requests} />
           <Stat label="Documents" value={c.evidence_documents} />
@@ -70,7 +70,7 @@ export function EngagementRail({ engagement }: { engagement: EngagementDetail })
         </dl>
       </section>
 
-      {engagement.tech_stack_summary && (
+      {audit.tech_stack_summary && (
         <section className="panel">
           <div className="panel-head">
             <h3>Client profile</h3>
@@ -79,7 +79,7 @@ export function EngagementRail({ engagement }: { engagement: EngagementDetail })
             {/* Rendered as text, never as markup. This is firm-entered content
                 and goes through the same escaping path as anything else
                 (05_SECURITY.md §10.5). */}
-            <p className="small">{engagement.tech_stack_summary}</p>
+            <p className="small">{audit.tech_stack_summary}</p>
           </div>
         </section>
       )}

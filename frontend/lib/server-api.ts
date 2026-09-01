@@ -5,7 +5,7 @@
  * to be forwarded explicitly from the incoming request. Doing the fetch on the
  * server rather than in the client means a protected page never renders a
  * logged-out shell first and then corrects itself, which matters here: a flash
- * of an empty engagement list looks exactly like "you have no engagements".
+ * of an empty audit list looks exactly like "you have no audits".
  *
  * These calls go to the API service directly (API_INTERNAL_URL), not through
  * the Next rewrite — the rewrite exists to give the *browser* a same-origin
@@ -31,7 +31,7 @@ export async function serverFetch<T>(path: string): Promise<T> {
       Accept: "application/json",
       ...(cookieHeader ? { Cookie: cookieHeader } : {}),
     },
-    // Engagement data changes as the worker processes evidence, and an auditor
+    // Audit data changes as the worker processes evidence, and an auditor
     // acting on a cached queue would be reviewing findings that have already
     // moved. Never cache.
     cache: "no-store",

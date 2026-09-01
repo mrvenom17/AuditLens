@@ -1,24 +1,22 @@
-"""Finding review and engagement finalization routes.
+"""Finding review and audit finalization routes.
 
 04_API_CONTRACT.md → PATCH /api/findings/{id}/review and
-POST /api/engagements/{id}/finalize — the latter described there as "the single
+POST /api/audits/{id}/finalize — the latter described there as "the single
 highest-stakes endpoint in the system".
 """
 
 from __future__ import annotations
 
 import uuid
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Query, Response
-from sqlalchemy import select
 from sqlalchemy.orm import Session as DBSession
 
 from app.api.deps import CurrentActor
 from app.db.session import get_db
 from app.models.enums import FindingStatus
 from app.models.finding import Finding
-from app.models.scoping import ScopedRequirement
 from app.schemas.common import ErrorResponse
 from app.schemas.finding import (
     BlockingRequirement,
@@ -48,33 +46,34 @@ Findings = Annotated[FindingService, Depends(get_finding_service)]
 Finalization = Annotated[FinalizationService, Depends(get_finalization_service)]
 
 
-def _clause_ids(db: DBSession, findings: list[Finding]) -> dict[uuid.UUID, str]:
-    if not findings:
-        return {}
-    scoped_ids = {f.scoped_requirement_id for f in findings}
-    rows = db.scalars(select(ScopedRequirement).where(ScopedRequirement.id.in_(scoped_ids))).all()
-    return {row.id: row.requirement.clause_id for row in rows}
+def _control_for(finding: Finding) -> Any:
+    """The control id shown beside a finding.
+
+    Read from the evaluation's own joined ControlDefinition rather than via the
+    ScopedControl, so it stays correct even for a finding whose scope row was
+    never linked — and so it always names the exact control version that was
+    evaluated.
+    """
+    return finding.evaluation.control if finding.evaluation else None
 
 
-@router.get("/api/engagements/{engagement_id}/findings", response_model=list[FindingResponse])
+@router.get("/api/audits/{audit_id}/findings", response_model=list[FindingResponse])
 def list_findings(
-    engagement_id: uuid.UUID,
+    audit_id: uuid.UUID,
     actor: CurrentActor,
     service: Findings,
     db: Annotated[DBSession, Depends(get_db)],
     status: Annotated[FindingStatus | None, Query()] = None,
-    needs_manual_review: Annotated[bool | None, Query()] = None,
 ) -> list[FindingResponse]:
     """The review queue.
 
-    Draft and approved findings are structurally distinguishable in the response
-    schema itself, not merely by convention (04_API_CONTRACT.md, Security Notes).
+    `system_result` and `auditor_decision` come back as separate top-level
+    fields, and a gate-unverified finding carries an explicit flag — both are
+    contract guarantees, not UI conventions (04_API_CONTRACT.md, Security
+    Notes).
     """
-    findings = service.list_for_engagement(
-        engagement_id, actor, status=status, needs_manual_review=needs_manual_review
-    )
-    clause_ids = _clause_ids(db, findings)
-    return [FindingResponse.of(f, clause_ids[f.scoped_requirement_id]) for f in findings]
+    findings = service.list_for_audit(audit_id, actor, status=status)
+    return [FindingResponse.of(f, _control_for(f)) for f in findings]
 
 
 @router.get("/api/findings/{finding_id}", response_model=FindingResponse)
@@ -85,7 +84,7 @@ def get_finding(
     db: Annotated[DBSession, Depends(get_db)],
 ) -> FindingResponse:
     finding = service.get(finding_id, actor)
-    return FindingResponse.of(finding, _clause_ids(db, [finding])[finding.scoped_requirement_id])
+    return FindingResponse.of(finding, _control_for(finding))
 
 
 @router.patch(
@@ -94,7 +93,7 @@ def get_finding(
     responses={
         400: {"model": ErrorResponse, "description": "VALIDATION_ERROR"},
         403: {"model": ErrorResponse},
-        409: {"model": ErrorResponse, "description": "ENGAGEMENT_FINALIZED | NO_AI_SUGGESTION"},
+        409: {"model": ErrorResponse, "description": "AUDIT_FINALIZED"},
     },
 )
 def review_finding(
@@ -104,7 +103,7 @@ def review_finding(
     service: Findings,
     db: Annotated[DBSession, Depends(get_db)],
 ) -> FindingResponse:
-    """Accept, edit, or reject.
+    """Record a human decision: approve, reject, or request more evidence.
 
     The Finding update and its FindingHistory row are written in the service
     inside one transaction; this handler's single commit is what makes them
@@ -114,11 +113,11 @@ def review_finding(
         finding_id,
         actor,
         action=payload.action,
-        edited_status=payload.edited_status,
+        auditor_decision=payload.auditor_decision,
         note=payload.note,
     )
     db.commit()
-    return FindingResponse.of(finding, _clause_ids(db, [finding])[finding.scoped_requirement_id])
+    return FindingResponse.of(finding, _control_for(finding))
 
 
 @router.get("/api/findings/{finding_id}/history", response_model=list[FindingHistoryEntry])
@@ -134,21 +133,21 @@ def finding_history(
 
 
 @router.get(
-    "/api/engagements/{engagement_id}/finalization-readiness",
+    "/api/audits/{audit_id}/finalization-readiness",
     response_model=FinalizationReadiness,
 )
 def finalization_readiness(
-    engagement_id: uuid.UUID, actor: CurrentActor, service: Finalization
+    audit_id: uuid.UUID, actor: CurrentActor, service: Finalization
 ) -> FinalizationReadiness:
     """What still blocks finalization, so the Reviewer can see their remaining
     work without having to attempt the action and read a 409."""
-    blockers = service.check_blockers(engagement_id, actor)
+    blockers = service.check_blockers(audit_id, actor)
     return FinalizationReadiness(
         ready=not blockers,
         blocking_requirements=[
             BlockingRequirement(
-                scoped_requirement_id=b.scoped_requirement_id,
-                clause_id=b.clause_id,
+                scoped_control_id=b.scoped_control_id,
+                control_id=b.control_id,
                 reason=b.reason,
             )
             for b in blockers
@@ -157,15 +156,15 @@ def finalization_readiness(
 
 
 @router.post(
-    "/api/engagements/{engagement_id}/finalize",
+    "/api/audits/{audit_id}/finalize",
     response_model=FinalizeResponse,
     responses={
         403: {"model": ErrorResponse, "description": "FORBIDDEN — Reviewer role only"},
         409: {"model": ErrorResponse, "description": "UNRESOLVED_FINDINGS | ALREADY_FINALIZED"},
     },
 )
-def finalize_engagement(
-    engagement_id: uuid.UUID,
+def finalize_audit(
+    audit_id: uuid.UUID,
     actor: CurrentActor,
     service: Finalization,
     db: Annotated[DBSession, Depends(get_db)],
@@ -177,14 +176,14 @@ def finalize_engagement(
     Auditor somehow gets a finalize button rendered client-side" — the client's
     view of its own permissions is not part of this decision.
     """
-    report = service.finalize(engagement_id, actor)
+    report = service.finalize(audit_id, actor)
     db.commit()
-    return FinalizeResponse(report_id=report.id, engagement_status="finalized")
+    return FinalizeResponse(report_id=report.id, audit_status="finalized")
 
 
-@router.get("/api/engagements/{engagement_id}/report")
+@router.get("/api/audits/{audit_id}/report")
 def get_report(
-    engagement_id: uuid.UUID,
+    audit_id: uuid.UUID,
     actor: CurrentActor,
     service: Finalization,
     format: Annotated[Literal["json", "pdf"], Query()] = "json",
@@ -194,18 +193,18 @@ def get_report(
     The PDF is rendered from the stored snapshot rather than from live tables,
     so re-downloading an old report always produces the same document.
     """
-    report = service.get_report(engagement_id, actor)
+    report = service.get_report(audit_id, actor)
 
     if format == "pdf":
         pdf = render_report_pdf(report.snapshot_data)
-        client_name = report.snapshot_data["engagement"]["client_name"]
+        client_name = report.snapshot_data["audit"]["client_name"]
         safe_name = "".join(c for c in client_name if c.isalnum() or c in " -_").strip()
         return Response(
             content=pdf,
             media_type="application/pdf",
             headers={
                 "Content-Disposition": (
-                    f'attachment; filename="PCI-DSS-Report-{safe_name or "engagement"}.pdf"'
+                    f'attachment; filename="PCI-DSS-Report-{safe_name or "audit"}.pdf"'
                 ),
                 "X-Content-Type-Options": "nosniff",
             },

@@ -2,13 +2,15 @@
 
 | Product Goal | Feature | Requirement | Architecture Component | Data Entity | API Endpoint | Security Control | Test | Task |
 |---|---|---|---|---|---|---|---|---|
-| Reduce scoping time | PCI Scope Matching | 01_REQ §Scope Matching | Service Layer + LLM (§7.6) | ScopedRequirement, PCIRequirement | POST /engagements/{id}/scope-suggestion | Rate limit; no client evidence sent at this step | Timeout-fallback test (TASK-013) | TASK-013 |
-| Reduce evidence-chasing | Evidence Request Generation | 01_REQ §Evidence Request Generation | Service Layer | EvidenceRequest | POST /engagements/{id}/evidence-requests/generate | Draft-only, no external send (ADR-004) | No-duplicate-request test | TASK-015 |
-| Speed up document review | Evidence Ingestion + Matching | 01_REQ §Evidence Ingestion, §Evidence-to-Clause Matching | Pipelines (extraction, embedding, LLM) | EvidenceDocument, Finding | POST /engagements/{id}/evidence-documents | Content-type inspection, size limit, no active-content execution | Malicious-upload test, confidence-threshold test | TASK-016, 017, 018, 019 |
-| Never remove human judgment | Finding Review | 01_REQ §Finding Review | Service Layer state machine | Finding, FindingHistory | PATCH /findings/{id}/review | `reviewed_by` server-derived only (05_SEC §10.3) | Accept/edit/reject + override test | TASK-020 |
-| Never auto-finalize | Engagement Finalization | 01_REQ §Finalization | Service Layer | Engagement, Report | POST /engagements/{id}/finalize | Reviewer-only role check (ADR-003) | 403-for-non-Reviewer test (explicitly called out, 05_SEC §10.11) | TASK-021 |
-| Prevent cross-client data leakage | (cross-cutting) | 05_SEC §10.3 | Repository Layer ownership filter | All Engagement-scoped entities | All Engagement-scoped endpoints | Query-level ownership filter (03_DATA §8.2) | Full authz test suite | TASK-010, TASK-022 |
-| Secure account access | Authentication | 01_REQ §User Authentication | Auth middleware | User, Session | POST /auth/login | Argon2id, lockout, no enumeration | Lockout + enumeration tests | TASK-008 |
+| Trustworthy automation, not just fast automation | Machine-Readable Control Definition | 01_REQ §Control Definition | control_corpus_service | ControlDefinition | POST/GET /control-definitions | Admin-only write; strict schema validation (05_SEC §10.4) | DETERMINISTIC-requires-rules test | TASK-102, 103 |
+| Traceable evidence, not opinions | Fact Extraction | 01_REQ §Fact Extraction | fact_service | EvidenceFact | GET /audits/{id}/facts | No VERIFIED status without checkable location | Fact-with-no-value-not-fabricated test | TASK-104, 108 |
+| Zero-LLM-dependency truth | Deterministic Rule Evaluation | 01_REQ §Deterministic Rule Evaluation | rule_engine.py | ControlEvaluation | POST /audits/{id}/evaluate | No API write path to `.result` (05_SEC §10.3) | Per-operator tests, LLM-unavailable test | TASK-105, 107 |
+| Never trust an unverifiable claim | Evidence Gate | 01_REQ §Evidence Gate | evidence_gate.py | ControlEvaluation.gate_status | (internal, triggered by evaluate) | 10-point mechanical check, zero LLM | Fabricated-citation test, hash-mismatch test | TASK-109 |
+| Human stays the decision-maker | Finding Review | 01_REQ §Finding Review | review_service | Finding, FindingHistory | PATCH /findings/{id}/review | system_result/auditor_decision structurally separate fields | Override-preserves-both-fields test | TASK-106, 114 |
+| Resist manipulation | Adversarial & Safety Validation | 01_REQ §Adversarial & Safety Validation | fact_service, rule_engine, evidence_gate (structural) | ControlEvaluation | POST /audits/{id}/evaluate | 05_SEC §10.11 (5 tests) | The five AI Safety tests | TASK-113 |
+| Never auto-finalize | Audit Finalization | 01_REQ §Audit Finalization | reporting_service | Report | POST /audits/{id}/finalize | Reviewer-only, immutable snapshot incl. engine/corpus version | 403-for-non-Reviewer test | TASK-115 |
+| Prevent cross-client data leakage | (cross-cutting) | 05_SEC §10.3 | Repository ownership filter | All Audit-scoped entities | All Audit-scoped endpoints | Query-level filter (03_DATA §8.2) | Full authz suite | (existing, unchanged) |
+| Secure account access | Authentication | 01_REQ §User Authentication | Auth middleware | User, Session | POST /auth/login | Argon2id, lockout, no enumeration | Lockout + enumeration tests | (existing, unchanged) |
 
 ---
 
@@ -17,38 +19,39 @@
 **Status: PASS WITH ASSUMPTIONS**
 
 ### Product ↔ Requirements
-All V1 (POC) features in 00_PRODUCT.md §5.5 have a corresponding detailed requirement in 01_REQUIREMENTS.md. "Should Have" and "Nice to Have" items are intentionally not detailed in 01_REQUIREMENTS.md — consistent with POC scope.
+00_PRODUCT.md's Must-Have list and its acceptance-test table are both fully covered by 01_REQUIREMENTS.md's features, including the new Adversarial & Safety Validation feature, which exists specifically to make the acceptance table's rows testable requirements rather than aspirational claims.
 
 ### Requirements ↔ Architecture
-Every requirement's external dependencies (LLM, embedding, extraction) are covered in 02_ARCHITECTURE.md §7.6 with timeout/retry/fallback behavior defined. No requirement assumes an architectural capability that isn't documented.
+Every requirement's "zero LLM dependency" claims (Deterministic Rule Evaluation, Evidence Gate) are backed by explicit architectural rules in 02_ARCHITECTURE.md §7.4 (MUST NOT import LLM client) — this is checked at two levels (documentation and, per 07_TASKS.md TASK-107, an actual import-boundary test), avoiding a documentation/code drift risk that would otherwise be the single biggest risk in this whole redesign.
 
 ### Architecture ↔ Data Model
-Every entity referenced in the architecture's data flow (§7.5) exists in 03_DATA_MODEL.md. The background-worker pattern in §7.5 matches the `extraction_status`/`processing` state fields in the EvidenceDocument entity.
+`ControlEvaluation.result` having no API write path (02_ARCHITECTURE.md, 05_SECURITY.md §10.3) is reflected in 03_DATA_MODEL.md's Ownership Model and in 04_API_CONTRACT.md's endpoint definitions, none of which include a writable `result` field anywhere.
 
 ### Data Model ↔ Authorization
-Every user-owned/client-owned entity (Engagement and everything beneath it) has an explicit ownership rule in 03_DATA_MODEL.md §8.2, consistent with 05_SECURITY.md §10.3.
+`EvidenceFact` and `ControlEvaluation` both inherit audit-assignment-based ownership per 03_DATA_MODEL.md §8.2, consistent with every other audit-scoped entity.
 
 ### API ↔ Requirements
-Every endpoint in 04_API_CONTRACT.md traces to a feature in 01_REQUIREMENTS.md. No orphan endpoints; no requirement lacking an endpoint.
+Every new endpoint (control-definitions, facts, evaluate) traces to a feature in 01_REQUIREMENTS.md. The redefined `/findings` and `/findings/{id}/review` endpoints correctly expose `system_result` and `auditor_decision` as separate fields, matching 01_REQUIREMENTS.md → Finding Review's Explicitly Forbidden Behavior.
 
 ### API ↔ Security
-Every protected endpoint states its authentication and authorization requirement explicitly. The one endpoint with the highest stakes (finalize) has an explicit, separately-called-out test requirement in both 05_SECURITY.md §10.11 and 08_TESTING.md.
+The one security property hardest to get wrong in this whole system — no writable path to `ControlEvaluation.result` — is independently stated in 03_DATA_MODEL.md, 04_API_CONTRACT.md, 05_SECURITY.md §10.3, and 06_ENGINEERING_RULES.md. Redundant statement across four documents is intentional here, not documentation bloat, given how much of the product's trust claim rests on this one invariant.
 
 ### Security ↔ Testing
-Every threat in 05_SECURITY.md §10.1's threat table has at least one corresponding test category in 08_TESTING.md's Security Tests section.
+All five AI Safety tests in 05_SECURITY.md §10.11 have a corresponding row in 08_TESTING.md's AI Safety Tests table with a concrete setup and expected result — none are vague ("test for prompt injection") without a specific fixture.
 
 ### Tasks ↔ Requirements
-Every feature in 01_REQUIREMENTS.md has at least one task in 07_TASKS.md implementing it. TASK-010 (ownership filtering) is correctly identified as a prerequisite for all Phase 5–6 tasks rather than bundled into a single feature task, since it's a cross-cutting concern.
+07_TASKS.md is structured as a retrofit against an existing codebase (per the provided current-state assessment) rather than a from-scratch build — TASK-106 explicitly handles migrating existing Finding data rather than assuming a blank slate, which is a meaningful difference from how the original documentation revision was structured.
 
 ### Deployment ↔ Architecture
-09_DEPLOYMENT.md's environment variables match every external dependency named in 02_ARCHITECTURE.md §7.2 and §7.6 (database, session secret, LLM key, embedding model path, file storage path).
+09_DEPLOYMENT.md correctly reflects that this redesign adds zero new infrastructure — the rule engine and Evidence Gate are in-process modules, consistent with 02_ARCHITECTURE.md's "no service decomposition, no new infra" framing.
 
 ## Issues Found
-1. The original brief's "auto-generates a message" language was ambiguous between "drafts" and "sends" — resolved via ADR-004, documented as a Product/Architecture Challenge.
-2. PCI DSS v4.0.1 standard text licensing/access terms for corpus ingestion (TASK-006) were not addressed in the original brief — this is a legal/procurement question outside what any document here can resolve unilaterally.
+1. The provided roadmap and architecture documents use "Audit" terminology while the previously-generated documentation used "Engagement" — resolved by renaming throughout this revision, flagged explicitly in each file's header note rather than silently changed.
+2. The provided roadmap assumes an existing codebase already implements much of the foundation; this documentation cannot verify that codebase's actual current field names/schema against what's specified here. `DECISION REQUIRED`: reconcile this documentation against the actual current schema before treating 03_DATA_MODEL.md as authoritative over the real database.
+3. The 35-category master template (external input) was not built out as 35 separate files — resolved by explicitly scoping this revision to the existing 12-document structure and naming which categories (UI/UX spec, Risk Register, Compliance/Regulatory, Change-Control Governance, Master Constitution) are reasonable future additions rather than Level 0 requirements.
 
 ## Issues Resolved
-Both of the above are resolved by explicit documentation (ADR-004; TASK-006's Implementation Constraints) rather than left as silent gaps.
+All three above are resolved via explicit documentation (terminology note in each file; `DECISION REQUIRED` flag in 00_PRODUCT.md §5.8; explicit scoping statement in this response) rather than silent gaps.
 
 ## Outstanding Decisions
-See 00_PRODUCT.md §5.8 and each `DECISION REQUIRED` marker across ADR-005 (external LLM data-handling disclosure to the firm) and ADR-007 (server isolation) — these require your confirmation, not further architectural work, before Phase 0/TASK-001 can be marked complete.
+See 00_PRODUCT.md §5.8 (exact control list, malware-scan gating decision, schema reconciliation against any existing real codebase) — these require your confirmation or a direct look at the actual repository, not further documentation work, before Phase R0/TASK-101 can be marked complete.

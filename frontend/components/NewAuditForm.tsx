@@ -4,10 +4,10 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { ApiError, api } from "@/lib/api";
-import type { EngagementDetail, EntityType, MerchantLevel } from "@/types/api";
+import type { AuditDetail, EntityType, MerchantLevel } from "@/types/api";
 
 /**
- * Engagement intake.
+ * Audit intake.
  *
  * The conditional rule — merchant level is required for merchants and must be
  * absent for service providers — is enforced server-side by the Pydantic
@@ -15,7 +15,19 @@ import type { EngagementDetail, EntityType, MerchantLevel } from "@/types/api";
  * before they submit, never as the authority
  * (06_ENGINEERING_RULES.md § Validation).
  */
-export function NewEngagementForm() {
+/** Vocabulary mirrored from `SystemComponent` on the backend. */
+const SYSTEM_OPTIONS: Array<[string, string]> = [
+  ["ecommerce_platform", "E-commerce platform"],
+  ["pos_terminals", "POS terminals"],
+  ["call_centre", "Call centre"],
+  ["payment_gateway", "Payment gateway"],
+  ["internal_network", "Internal network"],
+  ["wireless_network", "Wireless network"],
+  ["custom_software", "Custom-developed software"],
+  ["physical_facility", "Physical facility"],
+];
+
+export function NewAuditForm() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -28,13 +40,21 @@ export function NewEngagementForm() {
   const [saqType, setSaqType] = useState("");
   const [techStack, setTechStack] = useState("");
 
+  // Company profile. Every answer is tri-state on purpose: "" means the question
+  // has not been answered, which keeps the control UNDETERMINED rather than
+  // letting a blank form silently exclude requirements from the audit.
+  const [storesChd, setStoresChd] = useState("");
+  const [transmitsChd, setTransmitsChd] = useState("");
+  const [systems, setSystems] = useState<string[]>([]);
+  const [systemsAnswered, setSystemsAnswered] = useState(false);
+
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault();
     setSubmitting(true);
     setError(null);
 
     try {
-      const created = await api.post<EngagementDetail>("/api/engagements", {
+      const created = await api.post<AuditDetail>("/api/audits", {
         client_name: clientName,
         entity_type: entityType,
         // Sent only when it applies; the server rejects a level on a service
@@ -43,8 +63,15 @@ export function NewEngagementForm() {
         annual_transaction_volume: volume ? Number(volume) : null,
         existing_saq_type: saqType || null,
         tech_stack_summary: techStack || null,
+        company_profile: {
+          // Omitted keys stay unanswered. Sending `false` for a question nobody
+          // answered would let the engine exclude controls on a guess.
+          ...(storesChd ? { stores_cardholder_data: storesChd === "yes" } : {}),
+          ...(transmitsChd ? { transmits_cardholder_data: transmitsChd === "yes" } : {}),
+          ...(systemsAnswered ? { systems } : {}),
+        },
       });
-      router.push(`/engagements/${created.id}`);
+      router.push(`/audits/${created.id}`);
       router.refresh();
     } catch (caught) {
       setError(
@@ -59,7 +86,7 @@ export function NewEngagementForm() {
   if (!open) {
     return (
       <button type="button" className="btn btn-primary" onClick={() => setOpen(true)}>
-        New engagement
+        New audit
       </button>
     );
   }
@@ -67,7 +94,7 @@ export function NewEngagementForm() {
   return (
     <div className="panel form-panel">
       <div className="panel-head">
-        <h2>New engagement</h2>
+        <h2>New audit</h2>
         <button
           type="button"
           className="btn btn-sm btn-ghost"
@@ -168,6 +195,82 @@ export function NewEngagementForm() {
           </p>
         </div>
 
+        <fieldset className="field">
+          <legend>Scope profile</legend>
+          <p className="hint">
+            These answers decide, mechanically, which controls apply. Leave one
+            blank if you do not know yet &mdash; AuditLens will say it could not
+            determine those controls rather than quietly dropping them.
+          </p>
+
+          <div className="row wrap">
+            <div>
+              <label htmlFor="stores_chd">Stores cardholder data</label>
+              <select
+                id="stores_chd"
+                value={storesChd}
+                onChange={(e) => setStoresChd(e.target.value)}
+                disabled={submitting}
+              >
+                <option value="">Not answered</option>
+                <option value="yes">Yes</option>
+                <option value="no">No</option>
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="transmits_chd">Transmits cardholder data</label>
+              <select
+                id="transmits_chd"
+                value={transmitsChd}
+                onChange={(e) => setTransmitsChd(e.target.value)}
+                disabled={submitting}
+              >
+                <option value="">Not answered</option>
+                <option value="yes">Yes</option>
+                <option value="no">No</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="field">
+            <label htmlFor="systems">Systems in the environment</label>
+            <select
+              id="systems"
+              multiple
+              size={5}
+              value={systems}
+              onChange={(e) => {
+                setSystems(Array.from(e.target.selectedOptions, (o) => o.value));
+                setSystemsAnswered(true);
+              }}
+              disabled={submitting}
+            >
+              {SYSTEM_OPTIONS.map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            <p className="hint">
+              Selecting none and confirming is a real answer (&ldquo;none of
+              these&rdquo;); not touching this leaves it unanswered.{" "}
+              {systemsAnswered ? (
+                <strong>Answered.</strong>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-ghost"
+                  onClick={() => setSystemsAnswered(true)}
+                  disabled={submitting}
+                >
+                  Mark as answered (none apply)
+                </button>
+              )}
+            </p>
+          </div>
+        </fieldset>
+
         {error && (
           <div className="note note-failed" role="alert">
             {error}
@@ -180,7 +283,7 @@ export function NewEngagementForm() {
             className="btn btn-primary"
             disabled={submitting || !clientName.trim()}
           >
-            {submitting ? "Creating…" : "Create engagement"}
+            {submitting ? "Creating…" : "Create audit"}
           </button>
         </div>
       </form>

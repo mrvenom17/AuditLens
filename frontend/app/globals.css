@@ -33,6 +33,13 @@
   --machine-wash: #f3f1fa;
   --machine-border: #d6cfea;
 
+  /* The deterministic engine. Deliberately not --machine: a rule-produced
+   * result and model-written prose are different kinds of claim, and the UI
+   * says so before a word is read. */
+  --engine: #2e6b5a;
+  --engine-wash: #ecf4f1;
+  --engine-border: #c8ded6;
+
   /* Determination statuses. Distinct from --machine by construction, because a
    * determination is precisely the thing a machine cannot make. */
   --satisfied: #1c6b45;
@@ -331,6 +338,103 @@ tbody tr:hover td {
   color: var(--not-applicable);
   border-color: color-mix(in srgb, var(--not-applicable) 22%, transparent);
 }
+/* --- Six-state system result (00_PRODUCT.md §5.5) ---------------------------
+ * Mapped onto the existing determination hues rather than new ones: PASS reads
+ * as satisfied, FAIL as not-satisfied, and the three "we could not say" states
+ * share the attention hue, because that is what they mean to an auditor working
+ * a queue — something here needs your judgment.
+ */
+.pill-PASS {
+  background: var(--satisfied-wash);
+  color: var(--satisfied);
+  border-color: color-mix(in srgb, var(--satisfied) 22%, transparent);
+}
+.pill-FAIL {
+  background: var(--not-satisfied-wash);
+  color: var(--not-satisfied);
+  border-color: color-mix(in srgb, var(--not-satisfied) 22%, transparent);
+}
+.pill-PARTIAL {
+  background: var(--partial-wash);
+  color: var(--partial);
+  border-color: color-mix(in srgb, var(--partial) 25%, transparent);
+}
+.pill-INSUFFICIENT_EVIDENCE,
+.pill-CONFLICT {
+  background: var(--attention-wash);
+  color: var(--attention);
+  border-color: var(--attention-border);
+}
+.pill-NOT_APPLICABLE {
+  background: var(--not-applicable-wash);
+  color: var(--not-applicable);
+  border-color: color-mix(in srgb, var(--not-applicable) 22%, transparent);
+}
+
+/* --- Evidence strength -------------------------------------------------------
+ * Muted on purpose. Strength is a qualifier on a result, not a result — it must
+ * not compete for attention with the verdict or the gate warning beside it.
+ */
+.pill-strength-STRONG {
+  background: var(--satisfied-wash);
+  color: var(--satisfied);
+  border-color: color-mix(in srgb, var(--satisfied) 22%, transparent);
+}
+.pill-strength-MODERATE {
+  background: var(--surface-sunken);
+  color: var(--ink-muted);
+  border-color: var(--border);
+}
+.pill-strength-WEAK,
+.pill-strength-NONE {
+  background: var(--attention-wash);
+  color: var(--attention);
+  border-color: var(--attention-border);
+}
+
+/* --- Applicability ----------------------------------------------------------
+ * UNDETERMINED gets the attention hue, not a neutral one. It means a profile
+ * question went unanswered, which is a thing the auditor can actually fix — and
+ * until they do, the engine cannot decide whether the control belongs in the
+ * audit at all.
+ */
+.pill-applicability-IN_SCOPE {
+  background: var(--surface-sunken);
+  color: var(--ink-muted);
+  border-color: var(--border);
+}
+.pill-applicability-NOT_APPLICABLE {
+  background: var(--not-applicable-wash);
+  color: var(--not-applicable);
+  border-color: color-mix(in srgb, var(--not-applicable) 22%, transparent);
+}
+.pill-applicability-UNDETERMINED {
+  background: var(--attention-wash);
+  color: var(--attention);
+  border-color: var(--attention-border);
+}
+
+/* The requirement being assessed, above the verdict. Quiet, but first — an
+ * auditor cannot judge a result against a clause number alone. */
+.requirement {
+  border-left: 3px solid var(--border-strong);
+  padding-left: 0.85rem;
+}
+
+.requirement .procedures {
+  margin-top: 0.35rem;
+}
+
+.requirement .procedures summary {
+  cursor: pointer;
+  color: var(--ink-muted);
+}
+
+.requirement .procedures ol {
+  margin: 0.35rem 0 0;
+  padding-left: 1.1rem;
+}
+
 .pill-neutral {
   background: var(--surface-sunken);
   color: var(--ink-muted);
@@ -398,6 +502,96 @@ tbody tr:hover td {
 }
 .determination-not_applicable {
   border-left-color: var(--not-applicable);
+}
+.determination-PASS {
+  border-left-color: var(--satisfied);
+}
+.determination-FAIL {
+  border-left-color: var(--not-satisfied);
+}
+.determination-PARTIAL {
+  border-left-color: var(--partial);
+}
+.determination-INSUFFICIENT_EVIDENCE,
+.determination-CONFLICT {
+  border-left-color: var(--attention);
+}
+.determination-NOT_APPLICABLE {
+  border-left-color: var(--not-applicable);
+}
+
+/* --- Engine provenance -------------------------------------------------------
+ * The counterpart to `.machine`, and the visual heart of this revision.
+ *
+ * A deterministic result and an AI explanation must never look alike, because
+ * the entire product claim is that they are different kinds of thing. `.machine`
+ * keeps the reserved AI hue for prose a model wrote. `.engine` gets its own
+ * treatment for a result a rule produced: squarer, cooler, with a mono readout
+ * of the rule that fired. An auditor should be able to tell which is which from
+ * across the room, not by reading a label.
+ */
+.engine {
+  background: var(--engine-wash);
+  border: 1px solid var(--engine-border);
+  border-left: 3px solid var(--engine);
+  border-radius: var(--radius-sm);
+  padding: 0.7rem 0.85rem;
+}
+
+.engine-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--engine);
+  margin-bottom: 0.4rem;
+}
+
+/* The rule that actually fired, shown verbatim. An auditor can check the
+ * arithmetic themselves, which is the whole point of a deterministic result. */
+.engine-rule {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+  margin-top: 0.35rem;
+}
+
+/* --- Unverified by the Evidence Gate -----------------------------------------
+ * 01_REQUIREMENTS.md § Finding Review, Edge Cases: a result the gate could not
+ * verify "must not look the same" as one it could. This is a security
+ * requirement wearing UX clothing, so it gets the loudest treatment in the
+ * stylesheet — a hatched edge no other state uses.
+ */
+.unverified {
+  border-left-width: 3px;
+  border-left-style: dashed;
+  border-left-color: var(--failed);
+  background: var(--failed-wash);
+  border-top: 1px solid var(--failed-border);
+  border-right: 1px solid var(--failed-border);
+  border-bottom: 1px solid var(--failed-border);
+}
+
+.unverified-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--failed);
+  margin-bottom: 0.4rem;
+}
+
+.gate-checks {
+  margin: 0.3rem 0 0;
+  padding-left: 1.1rem;
 }
 
 /* --- Callouts --------------------------------------------------------------- */

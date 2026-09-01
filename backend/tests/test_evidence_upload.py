@@ -22,7 +22,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as DBSession
 
-from app.models.enums import EngagementStatus, EvidenceRequestStatus, ExtractionStatus, Role
+from app.models.enums import AuditStatus, EvidenceRequestStatus, ExtractionStatus, Role
 from app.models.evidence import EvidenceDocument
 from app.pipelines import extraction
 from app.pipelines.worker import process_extraction
@@ -40,24 +40,24 @@ def login(client: TestClient, user: Any) -> None:
 
 
 @pytest.fixture
-def uploader(make_user: Any, make_engagement: Any) -> dict[str, Any]:
+def uploader(make_user: Any, make_audit: Any) -> dict[str, Any]:
     auditor = make_user(Role.auditor, password=PASSWORD)
     return {
         "auditor": auditor,
-        "engagement": make_engagement(auditor, status=EngagementStatus.in_progress),
+        "audit": make_audit(auditor, status=AuditStatus.in_progress),
     }
 
 
 def upload(
     client: TestClient,
-    engagement_id: uuid.UUID,
+    audit_id: uuid.UUID,
     content: bytes,
     filename: str,
     content_type: str = "application/pdf",
     **data: Any,
 ) -> Any:
     return client.post(
-        f"/api/engagements/{engagement_id}/evidence-documents",
+        f"/api/audits/{audit_id}/evidence-documents",
         files={"file": (filename, content, content_type)},
         data=data,
     )
@@ -72,9 +72,7 @@ class TestAcceptedFileTypes:
         the request returns before any parsing happens."""
         login(api_client, uploader["auditor"])
 
-        response = upload(
-            api_client, uploader["engagement"].id, ff.valid_pdf(), "firewall-config.pdf"
-        )
+        response = upload(api_client, uploader["audit"].id, ff.valid_pdf(), "firewall-config.pdf")
 
         assert response.status_code == 201, response.text
         body = response.json()
@@ -115,7 +113,7 @@ class TestAcceptedFileTypes:
         """01_REQUIREMENTS.md § Inputs: PDF, DOCX, XLSX, PNG, JPG."""
         login(api_client, uploader["auditor"])
 
-        response = upload(api_client, uploader["engagement"].id, builder(), filename, declared_type)
+        response = upload(api_client, uploader["audit"].id, builder(), filename, declared_type)
 
         assert response.status_code == 201, response.text
         assert response.json()["mime_type"] == expected_mime
@@ -130,7 +128,7 @@ class TestAcceptedFileTypes:
 
         response = upload(
             api_client,
-            uploader["engagement"].id,
+            uploader["audit"].id,
             ff.valid_png(),
             "actually-a-png.pdf",
             "application/pdf",
@@ -150,7 +148,7 @@ class TestRejectedUploads:
 
         response = upload(
             api_client,
-            uploader["engagement"].id,
+            uploader["audit"].id,
             ff.disguised_executable(),
             "quarterly-report.pdf",
             "application/pdf",
@@ -169,7 +167,7 @@ class TestRejectedUploads:
 
         upload(
             api_client,
-            uploader["engagement"].id,
+            uploader["audit"].id,
             ff.disguised_executable(),
             "payload.pdf",
         )
@@ -203,7 +201,7 @@ class TestRejectedUploads:
         """
         login(api_client, uploader["auditor"])
 
-        response = upload(api_client, uploader["engagement"].id, builder(), filename, declared_type)
+        response = upload(api_client, uploader["audit"].id, builder(), filename, declared_type)
 
         assert response.status_code == 400, f"{filename} should have been rejected"
         assert response.json()["error"]["code"] == "UNSUPPORTED_FILE_TYPE"
@@ -214,7 +212,7 @@ class TestRejectedUploads:
         """TASK-016 and 04_API_CONTRACT.md: size ≤ 25MB, `413 FILE_TOO_LARGE`."""
         login(api_client, uploader["auditor"])
 
-        response = upload(api_client, uploader["engagement"].id, ff.oversized(26), "huge.pdf")
+        response = upload(api_client, uploader["audit"].id, ff.oversized(26), "huge.pdf")
 
         assert response.status_code == 413
         assert response.json()["error"]["code"] == "FILE_TOO_LARGE"
@@ -229,7 +227,7 @@ class TestRejectedUploads:
         # A real PDF padded with a trailing comment stays parseable and under cap.
         content = ff.valid_pdf() + b"\n%" + b"A" * (20 * 1024 * 1024)
 
-        response = upload(api_client, uploader["engagement"].id, content, "large.pdf")
+        response = upload(api_client, uploader["audit"].id, content, "large.pdf")
 
         assert response.status_code == 201
 
@@ -240,7 +238,7 @@ class TestRejectedUploads:
         oracle for mapping the filter."""
         login(api_client, uploader["auditor"])
 
-        response = upload(api_client, uploader["engagement"].id, ff.elf_executable(), "x.pdf")
+        response = upload(api_client, uploader["audit"].id, ff.elf_executable(), "x.pdf")
 
         message = response.json()["error"]["message"]
         assert "ELF" not in message
@@ -275,7 +273,7 @@ class TestFilenameHandling:
         """
         login(api_client, uploader["auditor"])
 
-        response = upload(api_client, uploader["engagement"].id, ff.valid_pdf(), hostile_name)
+        response = upload(api_client, uploader["audit"].id, ff.valid_pdf(), hostile_name)
 
         assert response.status_code == 201
         stored_name = response.json()["original_filename"]
@@ -303,36 +301,36 @@ class TestUploadAuthorization:
         intruder = make_user(Role.auditor, password=PASSWORD)
         login(api_client, intruder)
 
-        response = upload(api_client, uploader["engagement"].id, ff.valid_pdf(), "evidence.pdf")
+        response = upload(api_client, uploader["audit"].id, ff.valid_pdf(), "evidence.pdf")
 
         assert response.status_code == 403
 
     def test_unauthenticated_upload_is_rejected(
         self, api_client: TestClient, uploader: dict[str, Any]
     ) -> None:
-        response = upload(api_client, uploader["engagement"].id, ff.valid_pdf(), "evidence.pdf")
+        response = upload(api_client, uploader["audit"].id, ff.valid_pdf(), "evidence.pdf")
         assert response.status_code == 401
 
-    def test_evidence_request_from_another_engagement_cannot_be_linked(
+    def test_evidence_request_from_another_audit_cannot_be_linked(
         self,
         api_client: TestClient,
         db: DBSession,
         make_user: Any,
-        make_engagement: Any,
+        make_audit: Any,
         make_scoped_requirement: Any,
         uploader: dict[str, Any],
     ) -> None:
-        """A valid request id belonging to a different engagement must not
+        """A valid request id belonging to a different audit must not
         link across — that would attach one client's evidence to another's
         checklist item."""
         from app.repositories.scoping import EvidenceRequestRepository
 
         other_auditor = make_user(Role.auditor, password=PASSWORD)
-        other_engagement = make_engagement(other_auditor, status=EngagementStatus.in_progress)
-        other_scoped = make_scoped_requirement(other_engagement)
+        other_audit = make_audit(other_auditor, status=AuditStatus.in_progress)
+        other_scoped = make_scoped_requirement(other_audit)
         foreign_request = EvidenceRequestRepository(db).create(
-            engagement_id=other_engagement.id,
-            scoped_requirement_id=other_scoped.id,
+            audit_id=other_audit.id,
+            scoped_control_id=other_scoped.id,
             description="Provide the firewall export.",
             description_source="template",
         )
@@ -340,7 +338,7 @@ class TestUploadAuthorization:
         login(api_client, uploader["auditor"])
         response = upload(
             api_client,
-            uploader["engagement"].id,
+            uploader["audit"].id,
             ff.valid_pdf(),
             "evidence.pdf",
             evidence_request_id=str(foreign_request.id),
@@ -361,10 +359,10 @@ class TestUploadSideEffects:
         referenced EvidenceRequest.status to received"."""
         from app.repositories.scoping import EvidenceRequestRepository
 
-        scoped = make_scoped_requirement(uploader["engagement"])
+        scoped = make_scoped_requirement(uploader["audit"])
         request = EvidenceRequestRepository(db).create(
-            engagement_id=uploader["engagement"].id,
-            scoped_requirement_id=scoped.id,
+            audit_id=uploader["audit"].id,
+            scoped_control_id=scoped.id,
             description="Provide the firewall export.",
             description_source="template",
         )
@@ -372,7 +370,7 @@ class TestUploadSideEffects:
 
         response = upload(
             api_client,
-            uploader["engagement"].id,
+            uploader["audit"].id,
             ff.valid_pdf(),
             "evidence.pdf",
             evidence_request_id=str(request.id),
@@ -390,7 +388,7 @@ class TestUploadSideEffects:
         content = ff.valid_pdf("Content addressing check.")
         login(api_client, uploader["auditor"])
 
-        response = upload(api_client, uploader["engagement"].id, content, "evidence.pdf")
+        response = upload(api_client, uploader["audit"].id, content, "evidence.pdf")
 
         assert response.status_code == 201
         assert response.json()["content_hash"] == hashlib.sha256(content).hexdigest()
@@ -402,25 +400,25 @@ class TestUploadSideEffects:
         second EvidenceDocument row would double every Finding drawn from it."""
         content = ff.valid_pdf("Duplicate check.")
         login(api_client, uploader["auditor"])
-        assert upload(api_client, uploader["engagement"].id, content, "a.pdf").status_code == 201
+        assert upload(api_client, uploader["audit"].id, content, "a.pdf").status_code == 201
 
-        response = upload(api_client, uploader["engagement"].id, content, "b.pdf")
+        response = upload(api_client, uploader["audit"].id, content, "b.pdf")
 
         assert response.status_code == 409
         assert response.json()["error"]["code"] == "DUPLICATE_EVIDENCE"
 
-    def test_the_same_file_may_be_uploaded_to_two_engagements(
-        self, api_client: TestClient, make_engagement: Any, uploader: dict[str, Any]
+    def test_the_same_file_may_be_uploaded_to_two_audits(
+        self, api_client: TestClient, make_audit: Any, uploader: dict[str, Any]
     ) -> None:
-        """Deduplication is per engagement. Two clients may legitimately submit
+        """Deduplication is per audit. Two clients may legitimately submit
         the same vendor attestation."""
         content = ff.valid_pdf("Shared vendor attestation.")
-        second = make_engagement(
-            uploader["auditor"], status=EngagementStatus.in_progress, client_name="Other"
+        second = make_audit(
+            uploader["auditor"], status=AuditStatus.in_progress, client_name="Other"
         )
         login(api_client, uploader["auditor"])
 
-        assert upload(api_client, uploader["engagement"].id, content, "a.pdf").status_code == 201
+        assert upload(api_client, uploader["audit"].id, content, "a.pdf").status_code == 201
         assert upload(api_client, second.id, content, "a.pdf").status_code == 201
 
     def test_storage_path_is_never_returned_to_the_client(
@@ -428,14 +426,10 @@ class TestUploadSideEffects:
     ) -> None:
         """03_DATA_MODEL.md §8.4 classifies `storage_path` Sensitive."""
         login(api_client, uploader["auditor"])
-        created = upload(
-            api_client, uploader["engagement"].id, ff.valid_pdf(), "evidence.pdf"
-        ).json()
+        created = upload(api_client, uploader["audit"].id, ff.valid_pdf(), "evidence.pdf").json()
 
         detail = api_client.get(f"/api/evidence-documents/{created['id']}").json()
-        listed = api_client.get(
-            f"/api/engagements/{uploader['engagement'].id}/evidence-documents"
-        ).json()
+        listed = api_client.get(f"/api/audits/{uploader['audit'].id}/evidence-documents").json()
 
         assert "storage_path" not in created
         assert "storage_path" not in detail
@@ -448,7 +442,7 @@ class TestUploadSideEffects:
         origin — stored XSS from an external, untrusted source."""
         content = ff.valid_pdf("Downloadable.")
         login(api_client, uploader["auditor"])
-        created = upload(api_client, uploader["engagement"].id, content, "evidence.pdf").json()
+        created = upload(api_client, uploader["audit"].id, content, "evidence.pdf").json()
 
         response = api_client.get(f"/api/evidence-documents/{created['id']}/download")
 
@@ -461,9 +455,7 @@ class TestUploadSideEffects:
         self, api_client: TestClient, make_user: Any, uploader: dict[str, Any]
     ) -> None:
         login(api_client, uploader["auditor"])
-        created = upload(
-            api_client, uploader["engagement"].id, ff.valid_pdf(), "evidence.pdf"
-        ).json()
+        created = upload(api_client, uploader["audit"].id, ff.valid_pdf(), "evidence.pdf").json()
 
         intruder = make_user(Role.auditor, password=PASSWORD)
         login(api_client, intruder)
@@ -488,7 +480,7 @@ class TestExtraction:
         content_type: str = "application/pdf",
     ) -> EvidenceDocument:
         login(api_client, uploader["auditor"])
-        response = upload(api_client, uploader["engagement"].id, content, filename, content_type)
+        response = upload(api_client, uploader["audit"].id, content, filename, content_type)
         assert response.status_code == 201, response.text
         document = db.get(EvidenceDocument, uuid.UUID(response.json()["id"]))
         assert document is not None
@@ -670,7 +662,7 @@ class TestStuckExtractionSweep:
         from app.repositories.evidence import EvidenceDocumentRepository
 
         login(api_client, uploader["auditor"])
-        created = upload(api_client, uploader["engagement"].id, ff.valid_pdf(), "stuck.pdf").json()
+        created = upload(api_client, uploader["audit"].id, ff.valid_pdf(), "stuck.pdf").json()
         document = db.get(EvidenceDocument, uuid.UUID(created["id"]))
         assert document is not None
 
@@ -692,7 +684,7 @@ class TestStuckExtractionSweep:
         from app.repositories.evidence import EvidenceDocumentRepository
 
         login(api_client, uploader["auditor"])
-        created = upload(api_client, uploader["engagement"].id, ff.valid_pdf(), "fresh.pdf").json()
+        created = upload(api_client, uploader["audit"].id, ff.valid_pdf(), "fresh.pdf").json()
         document = db.get(EvidenceDocument, uuid.UUID(created["id"]))
         assert document is not None
         document.extraction_started_at = datetime.now(UTC) - timedelta(minutes=1)
@@ -712,7 +704,7 @@ class TestStuckExtractionSweep:
         from app.repositories.evidence import EvidenceDocumentRepository
 
         login(api_client, uploader["auditor"])
-        upload(api_client, uploader["engagement"].id, ff.valid_pdf(), "queued.pdf")
+        upload(api_client, uploader["audit"].id, ff.valid_pdf(), "queued.pdf")
 
         swept = EvidenceDocumentRepository(db).sweep_stuck_extractions(timedelta(minutes=10))
 

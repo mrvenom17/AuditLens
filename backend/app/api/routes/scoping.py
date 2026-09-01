@@ -31,7 +31,7 @@ Service = Annotated[ScopingService, Depends(get_service)]
 
 
 @router.post(
-    "/api/engagements/{engagement_id}/scope-suggestion",
+    "/api/audits/{audit_id}/scope-suggestion",
     response_model=ScopeSuggestionResponse,
     responses={
         403: {"model": ErrorResponse},
@@ -39,7 +39,7 @@ Service = Annotated[ScopingService, Depends(get_service)]
     },
 )
 def suggest_scope(
-    engagement_id: uuid.UUID,
+    audit_id: uuid.UUID,
     actor: CurrentActor,
     service: Service,
     db: Annotated[DBSession, Depends(get_db)],
@@ -51,7 +51,7 @@ def suggest_scope(
     service returns that state rather than raising, so there is no exception
     path here that could turn a degraded call into an error.
     """
-    result = service.suggest_scope(engagement_id, actor)
+    result = service.suggest_scope(audit_id, actor)
     db.commit()
     return ScopeSuggestionResponse(
         proposed_requirements=[ScopedRequirementResponse.of(s) for s in result.proposed],
@@ -62,26 +62,26 @@ def suggest_scope(
 
 
 @router.get(
-    "/api/engagements/{engagement_id}/scoped-requirements",
+    "/api/audits/{audit_id}/scoped-requirements",
     response_model=list[ScopedRequirementResponse],
 )
 def list_scoped_requirements(
-    engagement_id: uuid.UUID,
+    audit_id: uuid.UUID,
     actor: CurrentActor,
     service: Service,
     confirmed_only: bool = False,
 ) -> list[ScopedRequirementResponse]:
-    rows = service.list_scope(engagement_id, actor, confirmed_only=confirmed_only)
+    rows = service.list_scope(audit_id, actor, confirmed_only=confirmed_only)
     return [ScopedRequirementResponse.of(r) for r in rows]
 
 
 @router.post(
-    "/api/engagements/{engagement_id}/scoped-requirements",
+    "/api/audits/{audit_id}/scoped-requirements",
     response_model=ScopedRequirementResponse,
     status_code=status.HTTP_201_CREATED,
 )
 def add_manual_scoped_requirement(
-    engagement_id: uuid.UUID,
+    audit_id: uuid.UUID,
     payload: ManualScopeCreate,
     actor: CurrentActor,
     service: Service,
@@ -89,7 +89,7 @@ def add_manual_scoped_requirement(
 ) -> ScopedRequirementResponse:
     """Add a clause the AI did not propose. Created unconfirmed — adding a
     requirement to scope is not the same act as confirming it."""
-    scoped = service.add_manual(engagement_id, payload.clause_id, actor, payload.rationale)
+    scoped = service.add_manual(audit_id, payload.control_id, actor, payload.rationale)
     db.commit()
     return ScopedRequirementResponse.of(scoped)
 

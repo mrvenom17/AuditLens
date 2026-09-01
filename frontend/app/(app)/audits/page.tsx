@@ -1,21 +1,21 @@
 import Link from "next/link";
 
-import { NewEngagementForm } from "@/components/NewEngagementForm";
+import { NewAuditForm } from "@/components/NewAuditForm";
 import { serverFetch } from "@/lib/server-api";
 import {
-  ENGAGEMENT_STATUS_LABELS,
+  AUDIT_STATUS_LABELS,
   type CurrentUser,
-  type EngagementSummary,
+  type AuditSummary,
   type Page,
 } from "@/types/api";
 
-import "./engagements.css";
+import "./audits.css";
 
-export const metadata = { title: "Engagements · AuditLens" };
+export const metadata = { title: "Audits · AuditLens" };
 
-export default async function EngagementsPage() {
+export default async function AuditsPage() {
   const [page, user] = await Promise.all([
-    serverFetch<Page<EngagementSummary>>("/api/engagements"),
+    serverFetch<Page<AuditSummary>>("/api/audits"),
     serverFetch<CurrentUser>("/api/auth/me"),
   ]);
 
@@ -28,14 +28,14 @@ export default async function EngagementsPage() {
     <>
       <div className="page-head">
         <div>
-          <h1>Engagements</h1>
+          <h1>Audits</h1>
           <p className="page-sub">
             {user.role === "auditor"
-              ? "Engagements you are assigned to"
-              : "All engagements at the firm"}
+              ? "Audits you are assigned to"
+              : "All audits at the firm"}
           </p>
         </div>
-        {canCreate && <NewEngagementForm />}
+        {canCreate && <NewAuditForm />}
       </div>
 
       <div className="panel">
@@ -43,13 +43,13 @@ export default async function EngagementsPage() {
           <div className="empty">
             <p>
               {user.role === "auditor"
-                ? "No engagements are assigned to you."
-                : "No engagements yet."}
+                ? "No audits are assigned to you."
+                : "No audits yet."}
             </p>
             <p className="small" style={{ marginTop: "0.4rem" }}>
               {canCreate
                 ? "Create one to begin scoping a client against PCI DSS v4.0.1."
-                : "A Reviewer can assign you to an engagement."}
+                : "A Reviewer can assign you to an audit."}
             </p>
           </div>
         ) : (
@@ -63,30 +63,30 @@ export default async function EngagementsPage() {
               </tr>
             </thead>
             <tbody>
-              {page.items.map((engagement) => (
-                <tr key={engagement.id}>
+              {page.items.map((audit) => (
+                <tr key={audit.id}>
                   <td>
-                    <Link href={`/engagements/${engagement.id}`} className="row-link">
-                      {engagement.client_name}
+                    <Link href={`/audits/${audit.id}`} className="row-link">
+                      {audit.client_name}
                     </Link>
                   </td>
                   <td className="small muted">
-                    {engagement.entity_type === "merchant"
-                      ? `Merchant${engagement.merchant_level ? ` · Level ${engagement.merchant_level}` : ""}`
+                    {audit.entity_type === "merchant"
+                      ? `Merchant${audit.merchant_level ? ` · Level ${audit.merchant_level}` : ""}`
                       : "Service provider"}
                   </td>
                   <td>
                     <span
                       className={
-                        engagement.status === "finalized"
+                        audit.status === "finalized"
                           ? "pill pill-satisfied"
                           : "pill pill-neutral"
                       }
                     >
-                      {ENGAGEMENT_STATUS_LABELS[engagement.status]}
+                      {AUDIT_STATUS_LABELS[audit.status]}
                     </span>
                   </td>
-                  <td className="small muted mono">{engagement.created_at.slice(0, 10)}</td>
+                  <td className="small muted mono">{audit.created_at.slice(0, 10)}</td>
                 </tr>
               ))}
             </tbody>

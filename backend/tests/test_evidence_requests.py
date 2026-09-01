@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as DBSession
 
-from app.models.enums import EngagementStatus, EvidenceRequestStatus, Role
+from app.models.enums import AuditStatus, EvidenceRequestStatus, Role
 from app.models.scoping import EvidenceRequest
 from app.pipelines.llm import LLMError, LLMResponse, LLMTimeoutError, set_llm_client
 
@@ -53,18 +53,18 @@ def _reset_llm() -> Any:
 
 
 @pytest.fixture
-def scoped_engagement(make_user: Any, make_engagement: Any) -> dict[str, Any]:
+def scoped_audit(make_user: Any, make_audit: Any) -> dict[str, Any]:
     auditor = make_user(Role.auditor, password=PASSWORD)
     return {
         "auditor": auditor,
-        "engagement": make_engagement(auditor, status=EngagementStatus.in_progress),
+        "audit": make_audit(auditor, status=AuditStatus.in_progress),
     }
 
 
 def drafted(*clause_ids: str) -> dict[str, Any]:
     return {
         "requests": [
-            {"clause_id": c, "description": f"Please provide the artifact for {c}."}
+            {"control_id": c, "description": f"Please provide the artifact for {c}."}
             for c in clause_ids
         ]
     }
@@ -72,14 +72,14 @@ def drafted(*clause_ids: str) -> dict[str, Any]:
 
 class TestPreconditions:
     def test_no_confirmed_scope_returns_409(
-        self, api_client: TestClient, scoped_engagement: dict[str, Any]
+        self, api_client: TestClient, scoped_audit: dict[str, Any]
     ) -> None:
         """04_API_CONTRACT.md: 409 NO_CONFIRMED_SCOPE, with guidance to complete
         scoping first."""
-        login(api_client, scoped_engagement["auditor"])
+        login(api_client, scoped_audit["auditor"])
 
         response = api_client.post(
-            f"/api/engagements/{scoped_engagement['engagement'].id}/evidence-requests/generate"
+            f"/api/audits/{scoped_audit['audit'].id}/evidence-requests/generate"
         )
 
         assert response.status_code == 409
@@ -94,14 +94,14 @@ class TestPreconditions:
         self,
         api_client: TestClient,
         make_scoped_requirement: Any,
-        scoped_engagement: dict[str, Any],
+        scoped_audit: dict[str, Any],
     ) -> None:
         """A proposal the auditor never accepted is not scope."""
-        make_scoped_requirement(scoped_engagement["engagement"], confirmed=False)
-        login(api_client, scoped_engagement["auditor"])
+        make_scoped_requirement(scoped_audit["audit"], confirmed=False)
+        login(api_client, scoped_audit["auditor"])
 
         response = api_client.post(
-            f"/api/engagements/{scoped_engagement['engagement'].id}/evidence-requests/generate"
+            f"/api/audits/{scoped_audit['audit'].id}/evidence-requests/generate"
         )
 
         assert response.status_code == 409
@@ -111,14 +111,14 @@ class TestPreconditions:
         api_client: TestClient,
         make_user: Any,
         make_scoped_requirement: Any,
-        scoped_engagement: dict[str, Any],
+        scoped_audit: dict[str, Any],
     ) -> None:
-        make_scoped_requirement(scoped_engagement["engagement"], confirmed=True)
+        make_scoped_requirement(scoped_audit["audit"], confirmed=True)
         intruder = make_user(Role.auditor, password=PASSWORD)
         login(api_client, intruder)
 
         response = api_client.post(
-            f"/api/engagements/{scoped_engagement['engagement'].id}/evidence-requests/generate"
+            f"/api/audits/{scoped_audit['audit'].id}/evidence-requests/generate"
         )
 
         assert response.status_code == 403
@@ -131,25 +131,23 @@ class TestGeneration:
         db: DBSession,
         make_requirement: Any,
         make_scoped_requirement: Any,
-        scoped_engagement: dict[str, Any],
+        scoped_audit: dict[str, Any],
     ) -> None:
         clause_ids = ["1.2.1", "3.3.1", "8.3.6"]
-        for clause_id in clause_ids:
-            requirement = make_requirement(clause_id=clause_id, family=int(clause_id[0]))
-            make_scoped_requirement(
-                scoped_engagement["engagement"], confirmed=True, requirement=requirement
-            )
+        for control_id in clause_ids:
+            requirement = make_requirement(control_id=control_id, family=int(control_id[0]))
+            make_scoped_requirement(scoped_audit["audit"], confirmed=True, requirement=requirement)
         set_llm_client(FakeLLM(drafted(*clause_ids)))
-        login(api_client, scoped_engagement["auditor"])
+        login(api_client, scoped_audit["auditor"])
 
         response = api_client.post(
-            f"/api/engagements/{scoped_engagement['engagement'].id}/evidence-requests/generate"
+            f"/api/audits/{scoped_audit['audit'].id}/evidence-requests/generate"
         )
 
         assert response.status_code == 200, response.text
         body = response.json()
         assert len(body["created"]) == 3
-        assert sorted(r["clause_id"] for r in body["created"]) == clause_ids
+        assert sorted(r["control_id"] for r in body["created"]) == clause_ids
         assert all(r["status"] == "draft" for r in body["created"])
 
     def test_generated_requests_are_always_draft_never_sent(
@@ -157,18 +155,16 @@ class TestGeneration:
         api_client: TestClient,
         db: DBSession,
         make_scoped_requirement: Any,
-        scoped_engagement: dict[str, Any],
+        scoped_audit: dict[str, Any],
     ) -> None:
         """ADR-004 and 01_REQUIREMENTS.md Explicitly Forbidden Behavior: "The
         system must never dispatch an email, message, or any external
         communication as part of this feature.\""""
-        make_scoped_requirement(scoped_engagement["engagement"], confirmed=True)
+        make_scoped_requirement(scoped_audit["audit"], confirmed=True)
         set_llm_client(FakeLLM(drafted("1.1.1")))
-        login(api_client, scoped_engagement["auditor"])
+        login(api_client, scoped_audit["auditor"])
 
-        api_client.post(
-            f"/api/engagements/{scoped_engagement['engagement'].id}/evidence-requests/generate"
-        )
+        api_client.post(f"/api/audits/{scoped_audit['audit'].id}/evidence-requests/generate")
 
         rows = db.scalars(select(EvidenceRequest)).all()
         assert rows
@@ -194,30 +190,28 @@ class TestGeneration:
         api_client: TestClient,
         make_requirement: Any,
         make_scoped_requirement: Any,
-        scoped_engagement: dict[str, Any],
+        scoped_audit: dict[str, Any],
     ) -> None:
         """01_REQUIREMENTS.md: "a plain-language description of what's needed
         (not just the clause number)"."""
-        requirement = make_requirement(clause_id="1.2.1")
-        make_scoped_requirement(
-            scoped_engagement["engagement"], confirmed=True, requirement=requirement
-        )
+        requirement = make_requirement(control_id="1.2.1")
+        make_scoped_requirement(scoped_audit["audit"], confirmed=True, requirement=requirement)
         set_llm_client(
             FakeLLM(
                 {
                     "requests": [
                         {
-                            "clause_id": "1.2.1",
+                            "control_id": "1.2.1",
                             "description": "Please export your firewall rule set as a PDF.",
                         }
                     ]
                 }
             )
         )
-        login(api_client, scoped_engagement["auditor"])
+        login(api_client, scoped_audit["auditor"])
 
         body = api_client.post(
-            f"/api/engagements/{scoped_engagement['engagement'].id}/evidence-requests/generate"
+            f"/api/audits/{scoped_audit['audit'].id}/evidence-requests/generate"
         ).json()
 
         assert body["created"][0]["description"] == (
@@ -237,16 +231,14 @@ class TestNoDuplicates:
         db: DBSession,
         make_requirement: Any,
         make_scoped_requirement: Any,
-        scoped_engagement: dict[str, Any],
+        scoped_audit: dict[str, Any],
     ) -> None:
-        for clause_id in ("1.2.1", "3.3.1"):
-            requirement = make_requirement(clause_id=clause_id, family=int(clause_id[0]))
-            make_scoped_requirement(
-                scoped_engagement["engagement"], confirmed=True, requirement=requirement
-            )
+        for control_id in ("1.2.1", "3.3.1"):
+            requirement = make_requirement(control_id=control_id, family=int(control_id[0]))
+            make_scoped_requirement(scoped_audit["audit"], confirmed=True, requirement=requirement)
         set_llm_client(FakeLLM(drafted("1.2.1", "3.3.1")))
-        login(api_client, scoped_engagement["auditor"])
-        url = f"/api/engagements/{scoped_engagement['engagement'].id}/evidence-requests/generate"
+        login(api_client, scoped_audit["auditor"])
+        url = f"/api/audits/{scoped_audit['audit'].id}/evidence-requests/generate"
         assert len(api_client.post(url).json()["created"]) == 2
 
         second = api_client.post(url).json()
@@ -261,27 +253,27 @@ class TestNoDuplicates:
         db: DBSession,
         make_requirement: Any,
         make_scoped_requirement: Any,
-        scoped_engagement: dict[str, Any],
+        scoped_audit: dict[str, Any],
     ) -> None:
         """The mixed case from 01_REQUIREMENTS.md's acceptance criterion: with
         some requirements already covered, only the genuinely-missing ones
         produce new rows."""
-        engagement = scoped_engagement["engagement"]
-        first = make_requirement(clause_id="1.2.1")
-        make_scoped_requirement(engagement, confirmed=True, requirement=first)
+        audit = scoped_audit["audit"]
+        first = make_requirement(control_id="1.2.1")
+        make_scoped_requirement(audit, confirmed=True, requirement=first)
         set_llm_client(FakeLLM(drafted("1.2.1")))
-        login(api_client, scoped_engagement["auditor"])
-        url = f"/api/engagements/{engagement.id}/evidence-requests/generate"
+        login(api_client, scoped_audit["auditor"])
+        url = f"/api/audits/{audit.id}/evidence-requests/generate"
         api_client.post(url)
 
-        second = make_requirement(clause_id="3.3.1", family=3)
-        make_scoped_requirement(engagement, confirmed=True, requirement=second)
+        second = make_requirement(control_id="3.3.1", family=3)
+        make_scoped_requirement(audit, confirmed=True, requirement=second)
         set_llm_client(FakeLLM(drafted("1.2.1", "3.3.1")))
 
         result = api_client.post(url).json()
 
         assert len(result["created"]) == 1
-        assert result["created"][0]["clause_id"] == "3.3.1"
+        assert result["created"][0]["control_id"] == "3.3.1"
         assert result["skipped_already_requested"] == 1
         assert db.scalar(select(func.count()).select_from(EvidenceRequest)) == 2
 
@@ -291,37 +283,35 @@ class TestNoDuplicates:
         db: DBSession,
         make_requirement: Any,
         make_scoped_requirement: Any,
-        scoped_engagement: dict[str, Any],
+        scoped_audit: dict[str, Any],
     ) -> None:
         """01_REQUIREMENTS.md acceptance criterion, at its stated scale: "Given
         a confirmed scope with 40 requirements and evidence already on file for
         10 ... exactly 30 draft EvidenceRequest rows are created"."""
         from app.repositories.scoping import EvidenceRequestRepository
 
-        engagement = scoped_engagement["engagement"]
+        audit = scoped_audit["audit"]
         scoped_rows = []
         for index in range(40):
-            requirement = make_requirement(clause_id=f"1.{index + 1}.1")
+            requirement = make_requirement(control_id=f"1.{index + 1}.1")
             scoped_rows.append(
-                make_scoped_requirement(engagement, confirmed=True, requirement=requirement)
+                make_scoped_requirement(audit, confirmed=True, requirement=requirement)
             )
 
         # Ten already have a request on file.
         repo = EvidenceRequestRepository(db)
         for scoped in scoped_rows[:10]:
             repo.create(
-                engagement_id=engagement.id,
-                scoped_requirement_id=scoped.id,
+                audit_id=audit.id,
+                scoped_control_id=scoped.id,
                 description="Already requested.",
                 description_source="template",
             )
 
         set_llm_client(FakeLLM(raises=LLMTimeoutError("use templates")))
-        login(api_client, scoped_engagement["auditor"])
+        login(api_client, scoped_audit["auditor"])
 
-        result = api_client.post(
-            f"/api/engagements/{engagement.id}/evidence-requests/generate"
-        ).json()
+        result = api_client.post(f"/api/audits/{audit.id}/evidence-requests/generate").json()
 
         assert len(result["created"]) == 30
         assert result["skipped_already_requested"] == 10
@@ -346,20 +336,18 @@ class TestLLMFallback:
         api_client: TestClient,
         make_requirement: Any,
         make_scoped_requirement: Any,
-        scoped_engagement: dict[str, Any],
+        scoped_audit: dict[str, Any],
         failure: Exception,
     ) -> None:
         requirement = make_requirement(
-            clause_id="1.2.1", title="Configuration standards for NSC rulesets"
+            control_id="1.2.1", name="Configuration standards for NSC rulesets"
         )
-        make_scoped_requirement(
-            scoped_engagement["engagement"], confirmed=True, requirement=requirement
-        )
+        make_scoped_requirement(scoped_audit["audit"], confirmed=True, requirement=requirement)
         set_llm_client(FakeLLM(raises=failure))
-        login(api_client, scoped_engagement["auditor"])
+        login(api_client, scoped_audit["auditor"])
 
         response = api_client.post(
-            f"/api/engagements/{scoped_engagement['engagement'].id}/evidence-requests/generate"
+            f"/api/audits/{scoped_audit['audit'].id}/evidence-requests/generate"
         )
 
         assert response.status_code == 200, "this feature must never fail outright"
@@ -375,14 +363,14 @@ class TestLLMFallback:
         self,
         api_client: TestClient,
         make_scoped_requirement: Any,
-        scoped_engagement: dict[str, Any],
+        scoped_audit: dict[str, Any],
     ) -> None:
-        make_scoped_requirement(scoped_engagement["engagement"], confirmed=True)
+        make_scoped_requirement(scoped_audit["audit"], confirmed=True)
         set_llm_client(FakeLLM({"unexpected": "shape"}))
-        login(api_client, scoped_engagement["auditor"])
+        login(api_client, scoped_audit["auditor"])
 
         response = api_client.post(
-            f"/api/engagements/{scoped_engagement['engagement'].id}/evidence-requests/generate"
+            f"/api/audits/{scoped_audit['audit'].id}/evidence-requests/generate"
         )
 
         assert response.status_code == 200
@@ -393,24 +381,22 @@ class TestLLMFallback:
         api_client: TestClient,
         make_requirement: Any,
         make_scoped_requirement: Any,
-        scoped_engagement: dict[str, Any],
+        scoped_audit: dict[str, Any],
     ) -> None:
         """A model that answers for two of three requirements must not leave the
         third without a request — that would be a silent gap in the checklist."""
-        for clause_id in ("1.2.1", "3.3.1", "8.3.6"):
-            requirement = make_requirement(clause_id=clause_id, family=int(clause_id[0]))
-            make_scoped_requirement(
-                scoped_engagement["engagement"], confirmed=True, requirement=requirement
-            )
+        for control_id in ("1.2.1", "3.3.1", "8.3.6"):
+            requirement = make_requirement(control_id=control_id, family=int(control_id[0]))
+            make_scoped_requirement(scoped_audit["audit"], confirmed=True, requirement=requirement)
         set_llm_client(FakeLLM(drafted("1.2.1", "3.3.1")))
-        login(api_client, scoped_engagement["auditor"])
+        login(api_client, scoped_audit["auditor"])
 
         body = api_client.post(
-            f"/api/engagements/{scoped_engagement['engagement'].id}/evidence-requests/generate"
+            f"/api/audits/{scoped_audit['audit'].id}/evidence-requests/generate"
         ).json()
 
         assert len(body["created"]) == 3
-        descriptions = {r["clause_id"]: r["description"] for r in body["created"]}
+        descriptions = {r["control_id"]: r["description"] for r in body["created"]}
         assert "artifact for 1.2.1" in descriptions["1.2.1"]
         assert "8.3.6" in descriptions["8.3.6"]
 
@@ -420,15 +406,15 @@ class TestRequestEditing:
         self,
         api_client: TestClient,
         make_scoped_requirement: Any,
-        scoped_engagement: dict[str, Any],
+        scoped_audit: dict[str, Any],
     ) -> None:
         """01_REQUIREMENTS.md Success Output: the list is "editable by the
         auditor" before they send it themselves."""
-        make_scoped_requirement(scoped_engagement["engagement"], confirmed=True)
+        make_scoped_requirement(scoped_audit["audit"], confirmed=True)
         set_llm_client(FakeLLM(drafted("1.1.1")))
-        login(api_client, scoped_engagement["auditor"])
+        login(api_client, scoped_audit["auditor"])
         created = api_client.post(
-            f"/api/engagements/{scoped_engagement['engagement'].id}/evidence-requests/generate"
+            f"/api/audits/{scoped_audit['audit'].id}/evidence-requests/generate"
         ).json()["created"][0]
 
         response = api_client.patch(
@@ -444,16 +430,16 @@ class TestRequestEditing:
         api_client: TestClient,
         db: DBSession,
         make_scoped_requirement: Any,
-        scoped_engagement: dict[str, Any],
+        scoped_audit: dict[str, Any],
     ) -> None:
         """ADR-004: `sent_externally` is the auditor's own record that they sent
         it through their channel. The system does not verify delivery and never
         claims to."""
-        make_scoped_requirement(scoped_engagement["engagement"], confirmed=True)
+        make_scoped_requirement(scoped_audit["audit"], confirmed=True)
         set_llm_client(FakeLLM(drafted("1.1.1")))
-        login(api_client, scoped_engagement["auditor"])
+        login(api_client, scoped_audit["auditor"])
         created = api_client.post(
-            f"/api/engagements/{scoped_engagement['engagement'].id}/evidence-requests/generate"
+            f"/api/audits/{scoped_audit['audit'].id}/evidence-requests/generate"
         ).json()["created"][0]
 
         response = api_client.patch(
@@ -468,13 +454,13 @@ class TestRequestEditing:
         api_client: TestClient,
         make_user: Any,
         make_scoped_requirement: Any,
-        scoped_engagement: dict[str, Any],
+        scoped_audit: dict[str, Any],
     ) -> None:
-        make_scoped_requirement(scoped_engagement["engagement"], confirmed=True)
+        make_scoped_requirement(scoped_audit["audit"], confirmed=True)
         set_llm_client(FakeLLM(drafted("1.1.1")))
-        login(api_client, scoped_engagement["auditor"])
+        login(api_client, scoped_audit["auditor"])
         created = api_client.post(
-            f"/api/engagements/{scoped_engagement['engagement'].id}/evidence-requests/generate"
+            f"/api/audits/{scoped_audit['audit'].id}/evidence-requests/generate"
         ).json()["created"][0]
 
         intruder = make_user(Role.auditor, password=PASSWORD)
@@ -490,14 +476,12 @@ class TestRequestEditing:
         api_client: TestClient,
         make_user: Any,
         make_scoped_requirement: Any,
-        scoped_engagement: dict[str, Any],
+        scoped_audit: dict[str, Any],
     ) -> None:
-        make_scoped_requirement(scoped_engagement["engagement"], confirmed=True)
+        make_scoped_requirement(scoped_audit["audit"], confirmed=True)
         intruder = make_user(Role.auditor, password=PASSWORD)
         login(api_client, intruder)
 
-        response = api_client.get(
-            f"/api/engagements/{scoped_engagement['engagement'].id}/evidence-requests"
-        )
+        response = api_client.get(f"/api/audits/{scoped_audit['audit'].id}/evidence-requests")
 
         assert response.status_code == 403

@@ -13,7 +13,7 @@ import { ROLE_LABELS, type CurrentUser } from "@/types/api";
  * The role is shown because in this product it determines what the person can
  * do — a Reviewer is the only one who can sign off, and knowing which hat you
  * are wearing matters when the same person may hold different roles on
- * different engagements at other firms. It is a label, not a permission.
+ * different audits at other firms. It is a label, not a permission.
  */
 export function AppNav({ user }: { user: CurrentUser }) {
   const router = useRouter();
@@ -34,14 +34,14 @@ export function AppNav({ user }: { user: CurrentUser }) {
   }
 
   const links = [
-    { href: "/engagements", label: "Engagements" },
+    { href: "/audits", label: "Audits" },
     ...(user.role === "admin" ? [{ href: "/admin/users", label: "Users" }] : []),
   ];
 
   return (
     <header className="nav">
       <div className="nav-inner">
-        <Link href="/engagements" className="nav-brand">
+        <Link href="/audits" className="nav-brand">
           AuditLens
         </Link>
 

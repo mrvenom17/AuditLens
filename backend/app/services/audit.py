@@ -1,52 +1,55 @@
-"""Engagement business logic.
+"""Audit business logic.
 
 02_ARCHITECTURE.md §7.4: business rules live here and nowhere else. In
-particular the engagement state machine is enforced at this layer so that a
-future route, script, or worker cannot advance an engagement by writing the
+particular the audit state machine is enforced at this layer so that a
+future route, script, or worker cannot advance an audit by writing the
 column directly.
 """
 
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session as DBSession
 
-from app.errors import CODE_ENGAGEMENT_FINALIZED, ConflictError, NotFoundError, ValidationError
-from app.models.engagement import Engagement
-from app.models.enums import EngagementStatus, Role
-from app.repositories.engagement import ClientProfileDocumentRepository, EngagementRepository
+from app.errors import CODE_AUDIT_FINALIZED, ConflictError, NotFoundError, ValidationError
+from app.models.audit import Audit
+from app.models.enums import AuditStatus, Role
+from app.repositories.audit import AuditRepository, ClientProfileDocumentRepository
 from app.repositories.user import UserRepository
-from app.schemas.engagement import EngagementCreate
+from app.schemas.audit import AuditCreate, AuditProfileUpdate
 
 if TYPE_CHECKING:
     from app.api.deps import Actor
 
-# 03_DATA_MODEL.md → Engagement lifecycle: intake → scoping → in_progress →
+logger = logging.getLogger(__name__)
+
+# 03_DATA_MODEL.md → Audit lifecycle: intake → scoping → in_progress →
 # finalized, one-way, with `finalized` terminal. Encoded as data so that an
 # illegal transition is impossible to express rather than merely discouraged.
-_ALLOWED_TRANSITIONS: dict[EngagementStatus, set[EngagementStatus]] = {
-    EngagementStatus.intake: {EngagementStatus.scoping},
-    EngagementStatus.scoping: {EngagementStatus.in_progress},
-    EngagementStatus.in_progress: {EngagementStatus.finalized},
-    EngagementStatus.finalized: set(),
+_ALLOWED_TRANSITIONS: dict[AuditStatus, set[AuditStatus]] = {
+    AuditStatus.intake: {AuditStatus.scoping},
+    AuditStatus.scoping: {AuditStatus.in_progress},
+    AuditStatus.in_progress: {AuditStatus.finalized},
+    AuditStatus.finalized: set(),
 }
 
 
-class EngagementService:
+class AuditService:
     def __init__(self, db: DBSession) -> None:
         self._db = db
-        self._engagements = EngagementRepository(db)
+        self._audits = AuditRepository(db)
         self._profile_documents = ClientProfileDocumentRepository(db)
         self._users = UserRepository(db)
 
     # --- Creation ------------------------------------------------------------
 
-    def create(self, payload: EngagementCreate, actor: Actor) -> Engagement:
-        """Create an engagement and assign its creator.
+    def create(self, payload: AuditCreate, actor: Actor) -> Audit:
+        """Create an audit and assign its creator.
 
-        01_REQUIREMENTS.md § Engagement Creation, Explicitly Forbidden Behavior:
+        01_REQUIREMENTS.md § Audit Creation, Explicitly Forbidden Behavior:
         no outbound network call to any client-associated domain happens here.
         Nothing in this method performs I/O beyond the database — the
         scope-matching LLM call belongs to the next feature, not this one.
@@ -61,84 +64,106 @@ class EngagementService:
                     "One or more source_document_ids do not reference a known document."
                 )
 
-        engagement = self._engagements.create(
+        audit = self._audits.create(
             client_name=payload.client_name,
             entity_type=payload.entity_type,
             merchant_level=payload.merchant_level,
             annual_transaction_volume=payload.annual_transaction_volume,
             existing_saq_type=payload.existing_saq_type,
             tech_stack_summary=payload.tech_stack_summary,
+            company_profile=payload.company_profile.model_dump(mode="json", exclude_none=True),
             created_by=actor.id,
         )
         # "The creator is automatically the first assigned Auditor."
         # Without this the creator would immediately lose access to what they
         # just created, since visibility is assignment-based.
-        self._engagements.assign(engagement.id, actor.id)
-        return engagement
+        self._audits.assign(audit.id, actor.id)
+        return audit
+
+    def update_profile(
+        self, audit_id: uuid.UUID, payload: AuditProfileUpdate, actor: Actor
+    ) -> Audit:
+        """Correct an audit's company profile.
+
+        The profile now drives mechanical scope exclusion, so a mistyped answer
+        silently removes controls from the audit. Without an edit path the only
+        remedy would be abandoning the audit and starting over, which is how
+        people end up keeping a second copy of the truth in a spreadsheet.
+
+        `exclude_none` is what preserves the unanswered/answered distinction: a
+        field left out stays unanswered rather than being written as a null the
+        applicability engine would have to interpret.
+        """
+        audit = self.get(audit_id, actor)
+        self.ensure_not_finalized(audit)
+        audit.company_profile = payload.company_profile.model_dump(mode="json", exclude_none=True)
+        self._db.flush()
+        logger.info("audit.profile_updated audit=%s actor=%s", audit_id, actor.id)
+        return audit
 
     # --- Reads ---------------------------------------------------------------
 
-    def get(self, engagement_id: uuid.UUID, actor: Actor) -> Engagement:
-        """Fetch one engagement, or raise 403/404 per the contract."""
-        engagement = self._engagements.get_scoped(engagement_id, actor)
-        if engagement is None:
+    def get(self, audit_id: uuid.UUID, actor: Actor) -> Audit:
+        """Fetch one audit, or raise 403/404 per the contract."""
+        audit = self._audits.get_scoped(audit_id, actor)
+        if audit is None:
             # Re-derives the correct status code without ever having read the row.
-            self._engagements._require_access(engagement_id, actor, action="read_engagement")
-            raise NotFoundError("Engagement not found.")
+            self._audits._require_access(audit_id, actor, action="read_audit")
+            raise NotFoundError("Audit not found.")
         if actor.is_admin:
-            from app.logging_setup import log_admin_engagement_access
+            from app.logging_setup import log_admin_audit_access
 
-            log_admin_engagement_access(actor_id=str(actor.id), engagement_id=str(engagement.id))
-        return engagement
+            log_admin_audit_access(actor_id=str(actor.id), audit_id=str(audit.id))
+        return audit
 
     def list_visible(
         self,
         actor: Actor,
         *,
-        status: EngagementStatus | None = None,
+        status: AuditStatus | None = None,
         limit: int = 50,
         offset: int = 0,
-    ) -> tuple[list[Engagement], int]:
-        return self._engagements.list_scoped(actor, status=status, limit=limit, offset=offset)
+    ) -> tuple[list[Audit], int]:
+        return self._audits.list_scoped(actor, status=status, limit=limit, offset=offset)
 
-    def assigned_user_ids(self, engagement_id: uuid.UUID) -> list[uuid.UUID]:
-        return [a.user_id for a in self._engagements.list_assignments(engagement_id)]
+    def assigned_user_ids(self, audit_id: uuid.UUID) -> list[uuid.UUID]:
+        return [a.user_id for a in self._audits.list_assignments(audit_id)]
 
     # --- State machine -------------------------------------------------------
 
-    def advance_status(self, engagement: Engagement, target: EngagementStatus) -> None:
-        """Move an engagement forward, or raise.
+    def advance_status(self, audit: Audit, target: AuditStatus) -> None:
+        """Move an audit forward, or raise.
 
         Called by the scoping, evidence and finalization services rather than by
         routes, so every path through the workflow passes the same check.
         """
-        if engagement.status == target:
+        if audit.status == target:
             return
-        if target not in _ALLOWED_TRANSITIONS[engagement.status]:
+        if target not in _ALLOWED_TRANSITIONS[audit.status]:
             raise ConflictError(
-                f"An engagement in '{engagement.status.value}' cannot move to '{target.value}'.",
+                f"An audit in '{audit.status.value}' cannot move to '{target.value}'.",
                 code="INVALID_STATUS_TRANSITION",
-                current_status=engagement.status.value,
+                current_status=audit.status.value,
                 requested_status=target.value,
             )
-        self._engagements.set_status(engagement, target)
+        self._audits.set_status(audit, target)
 
-    def ensure_not_finalized(self, engagement: Engagement) -> None:
-        """Guard for every mutation of engagement-owned data.
+    def ensure_not_finalized(self, audit: Audit) -> None:
+        """Guard for every mutation of audit-owned data.
 
         01_REQUIREMENTS.md § Finalization, Business Rules: once finalized, an
-        engagement's Findings become read-only and a correction requires a new,
+        audit's Findings become read-only and a correction requires a new,
         explicitly-labelled record rather than a silent edit.
         """
-        if engagement.is_finalized:
+        if audit.is_finalized:
             raise ConflictError(
-                "This engagement is finalized and can no longer be modified.",
-                code=CODE_ENGAGEMENT_FINALIZED,
+                "This audit is finalized and can no longer be modified.",
+                code=CODE_AUDIT_FINALIZED,
             )
 
     # --- Assignments ---------------------------------------------------------
 
-    def assign_user(self, engagement_id: uuid.UUID, user_id: uuid.UUID, actor: Actor) -> object:
+    def assign_user(self, audit_id: uuid.UUID, user_id: uuid.UUID, actor: Actor) -> object:
         """Reviewer/Admin only — enforced by the route's role gate, re-checked
         here so a non-route caller cannot bypass it."""
         if actor.role not in (Role.reviewer, Role.admin):
@@ -146,30 +171,30 @@ class EngagementService:
 
             raise ForbiddenError("Only a Reviewer or Admin may change assignments.")
 
-        engagement = self.get(engagement_id, actor)
-        self.ensure_not_finalized(engagement)
+        audit = self.get(audit_id, actor)
+        self.ensure_not_finalized(audit)
 
         target = self._users.get_by_id(user_id)
         if target is None or not target.is_active:
             raise NotFoundError("User not found.")
 
-        if self._engagements.get_assignment(engagement_id, user_id) is not None:
+        if self._audits.get_assignment(audit_id, user_id) is not None:
             raise ConflictError(
-                "That user is already assigned to this engagement.",
+                "That user is already assigned to this audit.",
                 code="ALREADY_ASSIGNED",
             )
-        return self._engagements.assign(engagement_id, user_id)
+        return self._audits.assign(audit_id, user_id)
 
-    def unassign_user(self, engagement_id: uuid.UUID, user_id: uuid.UUID, actor: Actor) -> None:
+    def unassign_user(self, audit_id: uuid.UUID, user_id: uuid.UUID, actor: Actor) -> None:
         if actor.role not in (Role.reviewer, Role.admin):
             from app.errors import ForbiddenError
 
             raise ForbiddenError("Only a Reviewer or Admin may change assignments.")
 
-        engagement = self.get(engagement_id, actor)
-        self.ensure_not_finalized(engagement)
+        audit = self.get(audit_id, actor)
+        self.ensure_not_finalized(audit)
 
-        assignment = self._engagements.get_assignment(engagement_id, user_id)
+        assignment = self._audits.get_assignment(audit_id, user_id)
         if assignment is None:
-            raise NotFoundError("That user is not assigned to this engagement.")
-        self._engagements.remove_assignment(assignment)
+            raise NotFoundError("That user is not assigned to this audit.")
+        self._audits.remove_assignment(assignment)

@@ -32,6 +32,15 @@ class ValidationError(AppError):
     status_code = 400
     code = "VALIDATION_ERROR"
 
+    def __init__(self, message: str, code: str | None = None, **details: Any) -> None:
+        """`code` allows a specific machine-readable name for a validation the
+        API contract singles out — e.g. DETERMINISTIC_CONTROL_MISSING_RULES,
+        which 04_API_CONTRACT.md names explicitly because it guards the rule
+        engine's whole reason for existing."""
+        super().__init__(message, **details)
+        if code:
+            self.code = code
+
 
 class AuthenticationError(AppError):
     """401 — no valid session. Distinct from authorization failure."""
@@ -109,7 +118,7 @@ CODE_MISSING_PROFILE_FIELDS = "MISSING_PROFILE_FIELDS"
 CODE_NO_CONFIRMED_SCOPE = "NO_CONFIRMED_SCOPE"
 CODE_UNRESOLVED_FINDINGS = "UNRESOLVED_FINDINGS"
 CODE_ALREADY_FINALIZED = "ALREADY_FINALIZED"
-CODE_ENGAGEMENT_FINALIZED = "ENGAGEMENT_FINALIZED"
+CODE_AUDIT_FINALIZED = "AUDIT_FINALIZED"
 CODE_ALREADY_ASSIGNED = "ALREADY_ASSIGNED"
 CODE_EMAIL_ALREADY_EXISTS = "EMAIL_ALREADY_EXISTS"
 CODE_EXTRACTION_NOT_COMPLETE = "EXTRACTION_NOT_COMPLETE"

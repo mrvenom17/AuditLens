@@ -2,138 +2,134 @@
 
 ## 7.1 Architecture Overview
 
-A single-tenant monolith. This is deliberate: one firm, one deployment, low concurrent load (~5–20 users), and a POC goal of "prove the workflow," not "prove it scales." Do not split into services.
+Still a single-tenant modular monolith — the new architecture adds internal modules (Fact Engine, Rule Engine, Evidence Gate) but does not change the deployment shape. Per the frozen target architecture: distributed workers, queues, Kubernetes, and service decomposition remain explicitly deferred until Level 3+, when there is an actual operational reason for them.
 
 ```text
 Browser (Auditor / Reviewer / Admin)
    ↓ HTTPS via Cloudflare Tunnel
-Next.js Frontend (App Router, TypeScript)
-   ↓ REST calls
-FastAPI Backend
+Next.js Frontend
    ↓
-Authentication + Session Middleware
+FastAPI Backend — Auth + Authorization middleware
    ↓
-Route/API Layer
+Domain Services: Audit Service, Scope Service, Evidence Service,
+                  Fact Service, Evaluation Service, Gate Service,
+                  Review Service, Reporting Service, Control Corpus Service
    ↓
-Service Layer (business logic: scoping, matching, finalization rules)
+Repository Layer (SQLAlchemy)
    ↓
-Repository / Data Access Layer (SQLAlchemy)
-   ↓
-PostgreSQL (+ pgvector extension)
-   ↓
-Local filesystem volume (original evidence files, content-hash addressed)
+PostgreSQL (+ pgvector) — system of record
+   +
+Object Storage (local volume at Level 0) — original evidence files, hash-addressed
 
-Background workers (same host, separate process):
-   Extraction/OCR pipeline → Embedding pipeline → LLM matching calls
-   ↓
-   Writes results back through the Service Layer (not directly to DB)
+Async worker (same host, separate process), triggered on upload:
+   Extraction → OCR → Chunking → Embedding (discovery only)
+                              ↘ Fact Extraction (with provenance) → Rule Engine → Evidence Gate
 ```
 
 ## 7.2 Technology Stack
 
-| Technology | Purpose | Why selected | Alternatives rejected | Security implications | Operational implications |
-|---|---|---|---|---|---|
-| FastAPI (Python 3.12) | Backend API | Matches existing Anagha stack — reuses your existing skill and debugging experience | Django (heavier than needed for a POC), Express/Node (would mean building Python OCR/ML tooling in a second language) | Async-native, good for I/O-bound LLM calls | Same deployment pattern as Anagha — you already have working ops muscle memory here |
-| Next.js (App Router, TS) | Frontend | Same reasoning — stack reuse | Plain React SPA (loses SSR/routing conveniences with no offsetting benefit here) | N/A | Same |
-| PostgreSQL 16 + pgvector | Primary datastore + vector search | One database for both relational data and embeddings avoids running a separate vector DB for this scale | Dedicated vector DB (Pinecone/Weaviate) — unjustified operational overhead at this scale | Single system to secure/back up | Alembic migrations already familiar from Anagha |
-| SQLAlchemy 2.0 + Alembic | ORM + migrations | Consistency with existing stack | Raw SQL (loses migration tracking) | Parameterized queries by default (SQL-injection resistant) | Same migration workflow as Anagha |
-| Argon2id | Password hashing | Current best-practice password hash, memory-hard | bcrypt (acceptable but Argon2id is the stronger current default) | Resistant to GPU-based cracking | None significant |
-| Self-hosted embedding model (e.g., a small BGE/sentence-transformers model) | Convert text to vectors for retrieval | Predictable cost at low volume — no per-call billing surprise | Hosted embedding API — viable but adds a recurring cost line and an external dependency for a core pipeline step; revisit at Stage 2+ if self-hosted quality is insufficient | Runs entirely on your own infra — no evidence content leaves your server for this step | Requires a bit more setup than an API call; one-time cost |
-| LLM API (e.g., Claude) | Scope suggestion, evidence-request drafting, finding generation | Reasoning-heavy tasks where a hosted frontier model outperforms a self-hosted one at this stage | Fully self-hosted LLM — feasible later, not worth the complexity for a POC | Evidence content IS sent to this external API — must be disclosed to the client firm and covered in your own data-handling agreement with them | Recurring per-call cost; must have a hard fallback path for every feature that uses it (see §7.6, §7.7) |
-| Docker Compose | Local packaging for deployment | Matches typical self-hosted Ubuntu deployment pattern; simple, no orchestration overhead | Kubernetes — explicitly unjustified at this scale | Isolates services | Reuses your existing Cloudflare Tunnel + Ubuntu operational pattern |
+Unchanged from the prior revision (FastAPI/Next.js/PostgreSQL+pgvector/SQLAlchemy+Alembic/Argon2id/self-hosted embeddings/external LLM API/Docker Compose) — see prior revision's table for rationale. **One addition:**
+
+| Technology | Purpose | Why selected | Security implications |
+|---|---|---|---|
+| Deterministic rule engine (in-process Python module, not a third-party rules-engine library at this scale) | Evaluate `ControlDefinition.rules` against `EvidenceFact` rows | Simple enough (a handful of operators) that a dedicated rules-engine dependency is unjustified — write it as a small, heavily-tested internal module | This module has **zero network calls** by design — its testability and auditability are the whole point |
 
 ## 7.3 Repository Structure
 
 ```text
 /backend
   /app
-    /api            # route handlers only — thin, no business logic
-    /services        # business logic: scoping, matching, finalization rules
-    /repositories     # data access, one per entity
-    /models           # SQLAlchemy ORM models
-    /schemas          # Pydantic request/response models
-    /pipelines        # extraction, embedding, LLM-matching background jobs
-    /corpus           # PCI DSS v4.0.1 clause data + versioning
-    /auth             # session/auth logic
-    /config           # settings, environment loading
-  /migrations         # Alembic
+    /api
+    /services
+      /audit_service.py
+      /scope_service.py         # applicability engine
+      /evidence_service.py       # upload, storage, hashing
+      /fact_service.py           # NEW — fact extraction orchestration
+      /rule_engine.py            # NEW — pure, LLM-free deterministic evaluation
+      /evidence_gate.py          # NEW — the gate checks
+      /genai_service.py          # RENAMED/scoped — request drafting, explanations, report prose ONLY
+      /review_service.py
+      /reporting_service.py
+      /control_corpus_service.py # NEW — versioned control definitions
+    /repositories
+    /models
+    /schemas
+    /pipelines                   # extraction, OCR, chunking, embedding (discovery only)
+    /corpus                      # PCI DSS v4.0.1 control definitions, versioned
+    /auth
+    /config
+  /migrations
   /tests
+    /adversarial                 # NEW — prompt-injection, hallucination, fake-citation, contradiction tests
 /frontend
-  /app                # Next.js App Router pages
-  /components
-  /lib                # API client, auth helpers
-  /types              # shared TS types (mirrors backend Pydantic schemas)
-/docs                 # this documentation set
-/deploy               # Docker Compose, Cloudflare Tunnel config
+  ...same as prior revision...
 ```
 
 ## 7.4 Layer Responsibilities
 
-### Route/API Layer
-**MUST:** parse and validate the request (via Pydantic schemas), authenticate, authorize (call into the auth/authorization service — never inline role checks scattered across routes), call the appropriate service, return a sanitized response.
-**MUST NOT:** contain business logic (scoping rules, matching thresholds, finalization rules), perform direct database queries, trust any client-supplied ownership/role claim, expose raw internal exceptions to the client.
+Prior revision's Route/Repository/Frontend rules still apply unchanged. **Service Layer rules are extended:**
 
-### Service Layer
-**MUST:** implement all business rules from 01_REQUIREMENTS.md (e.g., "no Finding reaches approved without reviewed_by set"), orchestrate calls to repositories and to the pipelines module, enforce the human-sign-off invariant at this layer (not just in the API layer or the UI) so it cannot be bypassed by a future route that forgets to check.
-**MUST NOT:** know about HTTP (no request/response objects here — keeps it testable and reusable), directly construct SQL.
+### Rule Engine (`rule_engine.py`)
+**MUST:** be pure/deterministic — same facts + same rules always produce the same result; be fully unit-testable with the LLM/embedding services entirely absent from the test environment.
+**MUST NOT:** import or call any LLM/embedding client, under any circumstance, even for a "fallback" — if it cannot determine a result mechanically, it returns `INSUFFICIENT_EVIDENCE`, never delegates.
 
-### Repository/Data Layer
-**MUST:** be the only layer that touches the ORM/session directly, enforce ownership filters at the query level (e.g., an Auditor's engagement query is filtered by assignment in the query itself, not filtered after the fact in Python).
-**MUST NOT:** contain business logic beyond straightforward data-shape concerns.
+### GenAI Service (`genai_service.py`)
+**MUST:** operate only on already-determined data (draft evidence-request text from a control's `evidence_requirements`; draft a plain-language explanation of an existing `ControlEvaluation.result`; draft report prose from an existing immutable snapshot).
+**MUST NOT:** write to `ControlEvaluation.result`, `Finding.auditor_decision`, `ControlDefinition.rules`, or any field that determines compliance truth. Any code path where a GenAI service function's return value flows into one of those fields is a bug regardless of how it was introduced.
 
-### Frontend
-**MUST:** treat every server response as the source of truth for what the user is allowed to do (hide/disable UI based on role, but never rely on that as the actual security boundary), handle the "needs_manual_review" and "extraction_failed" states as first-class UI states, not edge cases bolted on later.
-**MUST NOT:** implement any authorization logic that isn't re-verified server-side, cache and reuse another user's session data.
+### Fact Service / Evidence Gate
+**MUST:** treat all extracted document content as untrusted data, never as instructions — this is the concrete implementation of prompt-injection resistance (01_REQUIREMENTS.md → Adversarial & Safety Validation).
+**MUST NOT:** allow a Fact's `verification_status` to be set to `VERIFIED` without a checkable source location.
 
 ## 7.5 Data Flow
 
-**Authentication:** browser → Next.js → FastAPI `/auth/login` → session created → httpOnly cookie set → subsequent requests carry the cookie → middleware resolves it to a user+role before any route handler runs.
+**Evidence → System Result (the core flow, replacing the prior revision's "evidence → LLM finding" flow):**
+```text
+upload → hash + store → async worker:
+  extract text/structure → OCR if needed → chunk
+    ↓                                    ↓
+  embed (pgvector, discovery-only)   fact_service: extract EvidenceFact rows
+                                          (LLM may assist locating candidate values;
+                                           stored value is data, not opinion)
+                                          ↓
+                                     rule_engine: evaluate ControlDefinition.rules
+                                     against EvidenceFact rows → ControlEvaluation.result
+                                          ↓
+                                     evidence_gate: 10-point check → gate_status
+                                          ↓
+                                     (only if gate passes or is explicitly flagged UNCERTAIN)
+                                     Finding created, review_service surfaces it
+                                          ↓
+                                     genai_service drafts explanation (display-only,
+                                     never written back into system_result)
+                                          ↓
+                                     Auditor/Reviewer records auditor_decision
+```
 
-**Core business operation (evidence → finding):** upload → repository stores file + metadata row → background worker picks up `extraction_status=processing` rows → extraction → embedding → retrieval against scoped requirements → LLM call → Finding row(s) written via the service layer (not directly by the worker) so business rules are enforced in one place.
-
-**Failure recovery:** any pipeline step failure sets an explicit status (`extraction_failed`, `needs_manual_review`) rather than retrying silently forever or leaving a row in `processing` indefinitely — a background sweep job flags anything stuck in `processing` past a timeout (e.g., 10 minutes) as `failed` for manual attention.
+**Evidence Discovery (RAG) — demoted role:** pgvector answers "where might relevant evidence be" for the fact_service's search, and separately for an auditor manually browsing evidence — it never answers "is this compliant." No code path treats a vector-similarity score as a compliance signal.
 
 ## 7.6 External Services
 
-### LLM API (scope suggestion, request drafting, finding generation)
-- **Purpose:** the three reasoning-heavy steps described in 01_REQUIREMENTS.md.
-- **Integration boundary:** called only from the `/pipelines` and relevant `/services` modules — never directly from route handlers.
-- **Authentication:** API key stored as an environment secret (see 05_SECURITY.md §10.6), never logged.
-- **Timeout strategy:** 8-second timeout on scope suggestion (interactive path); 30-second timeout on finding generation (background path).
-- **Retry strategy:** one retry with backoff for transient errors (5xx, timeout); no retry on 4xx (bad request — retrying won't fix it).
-- **Failure behavior:** every feature that calls the LLM has a defined non-LLM fallback state (see each feature's Failure Cases in 01_REQUIREMENTS.md) — the product must remain usable, just less automated, if this service is down.
-- **Rate limiting:** background matching jobs are queued and throttled to stay under the provider's rate limit; interactive calls (scope suggestion) are not queued but are capped per-user to prevent accidental abuse.
-- **Secret handling:** loaded from environment/secrets file, never committed, never returned in any API response or log line.
+Same LLM/embedding entries as the prior revision, with **scope restrictions tightened:**
 
-### Embedding model
-- **Purpose:** vectorize extracted evidence text and corpus clauses for retrieval.
-- **Integration boundary:** self-hosted, called from the `/pipelines` module.
-- **Failure behavior:** if the embedding service is down, extraction still completes and is stored, but matching is deferred (retried on a schedule) rather than failing the whole upload.
+### LLM API — now explicitly scoped to three non-authoritative uses
+1. Scope suggestion (as before — proposing applicable controls from a company profile; advisory, human-confirmed)
+2. Fact-location assistance (finding *where* a value appears in unstructured text — the value itself is then independently verifiable by a human against the citation)
+3. Explanation/report drafting (rendering an already-determined result into prose)
+
+**Never used for:** control rule authoring, direct compliance judgment, evidence-gate checks, resolving contradictions, or filling in a fact the extraction step couldn't find. Timeout/retry/fallback behavior per the prior revision's §7.6 still applies — and now, critically, **every one of these three uses has a defined behavior when the LLM is fully unavailable that still allows deterministic controls to evaluate correctly** (00_PRODUCT.md §5.6 acceptance test).
 
 ## 7.7 Error Handling Architecture
 
-- **User-visible errors:** validation errors (400), authorization errors (403), not-found (404), conflict (409) — all with a stable error `code` and a human-readable `message`.
-- **Logged-only errors:** any 5xx, any unexpected exception — logged with a `request_id` and full stack trace server-side, but the client only ever sees a generic "something went wrong, reference ID: {request_id}" message.
-- **Response format (standardized):**
-```json
-{
-  "error": {
-    "code": "REQUIREMENT_NOT_SCOPED",
-    "message": "This engagement has no confirmed scope yet.",
-    "request_id": "a1b2c3d4"
-  }
-}
-```
-- **Retryable vs non-retryable:** 5xx and timeouts are retryable by the client; 4xx are not (the request itself needs to change).
+Unchanged structurally from the prior revision. One addition to the standardized error response vocabulary: `GATE_REJECTED` and `EVALUATION_INSUFFICIENT_EVIDENCE` join the existing error codes, used specifically so the frontend can render these states distinctly from a generic error.
 
 ## 7.8 Logging and Observability
 
-- **Log:** every authentication attempt (success/failure, not password), every authorization denial, every Finding status transition with actor and timestamp, every external API call's latency and status (not its payload).
-- **Never log:** passwords, session tokens, full LLM prompts/responses containing client evidence content (log metadata about the call — duration, status, token count — not the content), raw file contents.
-- **Correlation:** every request gets a `request_id` propagated through logs and returned in error responses.
-- **Health checks:** `/health` (liveness — process is up) and `/health/ready` (readiness — DB and background worker queue reachable).
-- **Key metrics:** engagement count by status, Finding review queue depth, LLM call failure rate, extraction failure rate.
+Unchanged core rules (never log secrets/evidence content). **Additions specific to this architecture:**
+- Log every `ControlEvaluation` creation with its `engine_version` and whether the LLM was involved at all in producing any input to it (should be "no" for DETERMINISTIC controls — this is a monitorable invariant, not just a design intent).
+- Log every Evidence Gate check result, including which specific checks failed on a REJECTED/UNCERTAIN outcome — this is the data you'd want if you ever needed to demonstrate the system's trustworthiness to a skeptical auditor or regulator.
+- Log every case where `auditor_decision != system_result` (override rate) — this is a genuine product-quality metric, not just an audit-trail entry.
 
 ## 7.9 Performance and Scaling
 
-At this scale (one firm, a handful of concurrent engagements), performance risk is low. The one real bottleneck is the LLM/extraction pipeline for large evidence batches — this is why it's a background queue, not inline with the upload request. Database indexing: index `Engagement.status`, `Finding.status`, `Finding.engagement_id`, `EvidenceDocument.engagement_id` — these are the actual query patterns the UI will hit. No caching layer needed at this scale. No horizontal scaling planned for this stage — a single application server is sufficient and matches the existing self-hosted infra pattern.
+Unchanged from the prior revision. The rule engine and evidence gate add negligible load (in-process, no I/O beyond database reads already being made) — they are not a scaling concern at this or any near-term stage.

@@ -1,215 +1,141 @@
 # 07_TASKS.md
 
-Organized by dependency order. Complete each phase's tasks before starting the next, except where marked parallelizable. Every task follows the template below and must be executed one at a time by the coding agent.
+> **This is a retrofit plan, not a from-scratch build.** Per the current-state assessment: authentication, RBAC, the audit/scope model, evidence upload/storage, extraction, OCR, embeddings, RAG, LLM integration, human review, finalization, tests, CI, and deployment already exist as a working foundation. The remaining work is narrowly scoped to converting the evaluation core from "LLM judges compliance" to "deterministic rules judge compliance, LLM explains." Do not rebuild what already works.
 
-**Critical path:** Phase 1 → 2 → 3 → 4 → 5 → 6 → 8 → 9 (Phase 7 integration tasks are embedded within Phase 5/6 where each pipeline step is actually needed, not a separate later phase, since the core features don't function without them).
+**Critical path:** R1 → R2 → R3 → R4 → R5 → R6 → R7 → R8. This mirrors the Day 1–8 sequence in the source roadmap; phase boundaries here are dependency-based, not calendar-based.
 
 ---
 
-## Phase 0 — Planning and Foundation
+## Phase R0 — Retrofit Planning
 
-### TASK-001: Confirm open decisions
-**Goal:** Resolve the `DECISION REQUIRED` items in 00_PRODUCT.md §5.8 before any code is written.
-**Why It Exists:** Several decisions (product name, LLM provider/budget, evidence-request sending model) affect schema and config choices made in Phase 1–2.
+### TASK-101: Freeze the 5–10 control list
+**Goal:** Select the specific PCI DSS v4.0.1 controls for Level 0, drawn from the actual implemented corpus (not the illustrative list in 00_PRODUCT.md §5.5).
 **Dependencies:** None.
-**Relevant Documentation:** 00_PRODUCT.md §5.8.
-**Files/Layers Expected to Change:** None (documentation-only task).
-**Requirements:** All `DECISION REQUIRED` items answered or explicitly deferred with a stated default.
-**Implementation Constraints:** N/A.
-**Security Requirements:** N/A.
-**Tests Required:** N/A.
-**Acceptance Criteria:** 00_PRODUCT.md updated to reflect confirmed decisions in place of `DECISION REQUIRED` markers.
-**Explicitly Out of Scope:** Any code changes.
-**Completion Checklist:** `[ ]` Decisions confirmed and documented.
+**Requirements:** Each selected control must genuinely support deterministic verification — reject any candidate that turns out to need interpretation once you look at its actual assessment procedure.
+**Acceptance Criteria:** A written list of 5–10 `control_id`s with a one-line justification each for why it's deterministically verifiable.
+**Explicitly Out of Scope:** Any control requiring `HUMAN_ASSISTED` mode — those are noted for Level 1, not built now.
 
 ---
 
-## Phase 1 — Project Bootstrap
+## Phase R1 — Schema Additions
 
-### TASK-002: Repository scaffolding
-**Goal:** Set up the repository structure exactly as defined in 02_ARCHITECTURE.md §7.3.
-**Dependencies:** TASK-001.
-**Relevant Documentation:** 02_ARCHITECTURE.md §7.2, §7.3.
-**Files/Layers Expected to Change:** New repo: `/backend`, `/frontend`, `/deploy`, `/docs`.
-**Requirements:** FastAPI app boots with a `/health` endpoint; Next.js app boots with a placeholder page; both run via Docker Compose locally.
-**Implementation Constraints:** Match the exact folder layout in 02_ARCHITECTURE.md §7.3 — do not invent an alternative structure.
-**Security Requirements:** `.env.example` created, `.env` gitignored from the first commit.
-**Tests Required:** A smoke test confirming `/health` returns 200.
-**Acceptance Criteria:** `docker compose up` brings up backend + frontend + Postgres locally.
-**Explicitly Out of Scope:** Any business feature code.
-**Completion Checklist:** Per 06_ENGINEERING_RULES.md Definition of Done.
+### TASK-102: ControlDefinition schema + migration
+**Dependencies:** TASK-101.
+**Relevant Documentation:** 03_DATA_MODEL.md → ControlDefinition; 01_REQUIREMENTS.md → Machine-Readable Control Definition.
+**Implementation Constraints:** `evaluation_mode=DETERMINISTIC` requires non-empty `rules`/`facts`, enforced at the service layer AND the database layer (a check constraint or equivalent) — belt and suspenders on this one specifically.
+**Tests Required:** Attempt to save a DETERMINISTIC control with empty rules → rejected.
 
-### TASK-003: CI baseline
-**Goal:** Lint, type-check, and test run automatically on every commit/PR.
-**Dependencies:** TASK-002.
-**Relevant Documentation:** 06_ENGINEERING_RULES.md, 08_TESTING.md §CI Requirements.
-**Requirements:** CI fails the build on lint error, type error, or failing test.
-**Tests Required:** CI pipeline itself validated by an intentionally-failing test in a throwaway branch.
-**Acceptance Criteria:** A PR with a lint violation fails CI.
+### TASK-103: Author the frozen control set as ControlDefinition rows
+**Dependencies:** TASK-101, TASK-102.
+**Implementation Constraints:** Authored by a human (Admin action or seed script reviewed by a human) — never LLM-generated rules, per 01_REQUIREMENTS.md's Explicitly Forbidden Behavior.
+**Acceptance Criteria:** All 5–10 controls exist as valid `ControlDefinition` rows, each passing TASK-102's validation.
 
----
+### TASK-104: EvidenceFact schema + migration
+**Dependencies:** TASK-102.
+**Relevant Documentation:** 03_DATA_MODEL.md → EvidenceFact.
+**Tests Required:** A fact cannot be marked `VERIFIED` without a non-null page/line/cell location (enforced at the service layer that creates these rows).
 
-## Phase 2 — Data Layer
+### TASK-105: ControlEvaluation schema + migration
+**Dependencies:** TASK-104.
+**Relevant Documentation:** 03_DATA_MODEL.md → ControlEvaluation.
+**Implementation Constraints:** No API schema/route exposes a writable `result` field on this entity — verify this explicitly by checking that no Pydantic request model includes it.
 
-### TASK-004: Core schema migration — User, Session
-**Goal:** Implement the `User` entity and session table.
-**Dependencies:** TASK-002.
-**Relevant Documentation:** 03_DATA_MODEL.md → User.
-**Files/Layers Expected to Change:** `/backend/app/models`, `/backend/migrations`.
-**Security Requirements:** `password_hash` column, never a plaintext password column, even temporarily.
-**Tests Required:** Migration applies cleanly up and down.
-**Acceptance Criteria:** `User` table matches the field list in 03_DATA_MODEL.md exactly.
-
-### TASK-005: Core schema migration — Engagement, EngagementAssignment
-**Goal:** Implement Engagement and its assignment join table.
-**Dependencies:** TASK-004.
-**Relevant Documentation:** 03_DATA_MODEL.md → Engagement, EngagementAssignment.
-**Tests Required:** Unique constraint on `(engagement_id, user_id)` verified.
-
-### TASK-006: PCI DSS v4.0.1 corpus ingestion
-**Goal:** Load the PCI DSS v4.0.1 requirement text into `PCIRequirement` rows, versioned.
-**Dependencies:** TASK-002.
-**Relevant Documentation:** 03_DATA_MODEL.md → PCIRequirement.
-**Implementation Constraints:** Corpus text must be sourced from the actual published PCI DSS v4.0.1 standard (licensing/access terms for the standard itself must be checked before ingestion — this is outside the coding agent's authority to resolve and should be flagged `DECISION REQUIRED` if unclear at implementation time).
-**Tests Required:** Row count matches expected clause count (~78 base requirements); spot-check a handful of clause IDs against the published standard.
-**Acceptance Criteria:** Corpus is queryable by `clause_id` and `requirement_family`.
-**Explicitly Out of Scope:** ISO/RBI/DPDP corpora (Stage 3).
-
-### TASK-007: Remaining schema — ScopedRequirement, EvidenceRequest, EvidenceDocument, Finding, FindingHistory, Report
-**Goal:** Implement the remaining entities from 03_DATA_MODEL.md.
-**Dependencies:** TASK-005, TASK-006.
-**Security Requirements:** `EvidenceDocument.storage_path` and `extracted_text` classified Sensitive per 03_DATA_MODEL.md §8.4 — confirm no default logging captures these (cross-check against 05_SECURITY.md §10.7).
-**Tests Required:** Foreign key constraints verified; deletion-restriction behavior (03_DATA_MODEL.md §8.3) verified for at least one case (e.g., attempting to delete a User with existing `reviewed_by` Findings fails).
+### TASK-106: Redefine Finding to wrap ControlEvaluation
+**Goal:** Migrate the existing Finding entity (currently likely storing an "ai_suggested_status" directly, per the prior architecture) to reference `ControlEvaluation` and carry a genuinely separate `auditor_decision` field.
+**Dependencies:** TASK-105.
+**Relevant Documentation:** 03_DATA_MODEL.md → Finding (Redefined).
+**Implementation Constraints:** This is a real schema migration on existing data if any prior Findings exist — write a data-migration step that maps old `ai_suggested_status` values into a synthetic `ControlEvaluation` row per existing Finding (marked with a distinct `engine_version` like `"legacy-llm-v0"`) so historical data isn't silently lost, but is clearly distinguishable from genuinely deterministic evaluations going forward.
+**Tests Required:** Existing Findings remain readable post-migration; new Findings correctly separate `system_result` from `auditor_decision`.
 
 ---
 
-## Phase 3 — Authentication
+## Phase R2 — Rule Engine
 
-### TASK-008: Login endpoint + session middleware
-**Goal:** Implement POST /api/auth/login and session-resolution middleware.
-**Dependencies:** TASK-004.
-**Relevant Documentation:** 01_REQUIREMENTS.md → User Authentication; 04_API_CONTRACT.md → POST /api/auth/login; 05_SECURITY.md §10.2.
-**Security Requirements:** Argon2id hashing, constant-time comparison, lockout logic, httpOnly/Secure/SameSite=Strict cookie.
-**Tests Required:** Explicit tests for: valid login, invalid password, unknown email (identical response), lockout after 5 attempts, session cookie attributes.
-**Acceptance Criteria:** Matches every acceptance criterion in 01_REQUIREMENTS.md → User Authentication.
+### TASK-107: Build `rule_engine.py` as a pure, LLM-free module
+**Dependencies:** TASK-104, TASK-105.
+**Relevant Documentation:** 01_REQUIREMENTS.md → Deterministic Rule Evaluation; 02_ARCHITECTURE.md §7.4 (Rule Engine responsibilities); 06_ENGINEERING_RULES.md (Deterministic Core Invariant).
+**Implementation Constraints:** Operators: `==, !=, >, >=, <, <=, IN, NOT_IN, CONTAINS, EXISTS, NOT_EXISTS`. Zero imports of the LLM/embedding client — enforce via an import-boundary test, not just review.
+**Tests Required:** One test per operator; the four core acceptance scenarios (PASS/FAIL/INSUFFICIENT_EVIDENCE/CONFLICT) from 01_REQUIREMENTS.md's Acceptance Criteria; a test that runs the full engine with the LLM client mocked to raise `ConnectionError` on any call, proving zero dependency.
 
-### TASK-009: Seed script for initial Admin account
-**Goal:** A one-time script to create the first Admin user (no self-registration exists).
-**Dependencies:** TASK-008.
-**Implementation Constraints:** Run manually, not exposed as an API endpoint.
-**Security Requirements:** Script must not print the generated password to any persistent log.
-
----
-
-## Phase 4 — Authorization
-
-### TASK-010: Ownership-filtered repository layer
-**Goal:** Implement the Engagement-scoped query pattern described in 03_DATA_MODEL.md §8.2 as a reusable repository base.
-**Dependencies:** TASK-005, TASK-008.
-**Relevant Documentation:** 02_ARCHITECTURE.md §7.4 (Repository layer rules); 03_DATA_MODEL.md §8.2; 05_SECURITY.md §10.3.
-**Implementation Constraints:** Filtering happens in the SQL query itself (join against EngagementAssignment or role check), never "fetch all then filter in Python" — this is a hard rule, not a style preference.
-**Tests Required:** A test proving a User not in `EngagementAssignment` for Engagement X gets 403/empty result when querying X's data, even when role=auditor.
-**Acceptance Criteria:** This task is the single most important test target in the whole project — do not proceed to Phase 5 until this is solid.
+### TASK-108: Wire fact extraction to populate EvidenceFact for the frozen control set
+**Goal:** Adapt the existing extraction/LLM-assist pipeline so it populates `EvidenceFact` rows (with provenance) instead of, or in addition to, whatever it currently feeds into finding generation.
+**Dependencies:** TASK-104, TASK-103.
+**Relevant Documentation:** 01_REQUIREMENTS.md → Fact Extraction.
+**Implementation Constraints:** LLM assistance is scoped to "locate a candidate value's position in text" — the stored `EvidenceFact.value` and its location must be independently checkable by re-reading the cited location, not merely trusted from the LLM's output.
+**Tests Required:** Given a fixture document with a clear value, a Fact is created with correct value/location; given a document with no discoverable value, no Fact is fabricated.
 
 ---
 
-## Phase 5 — Core Feature A: Engagement Creation & Scoping
+## Phase R3 — Evidence Gate
 
-### TASK-011: POST /api/engagements
-**Dependencies:** TASK-010.
-**Relevant Documentation:** 01_REQUIREMENTS.md → Engagement Creation; 04_API_CONTRACT.md → POST /api/engagements.
-**Tests Required:** Per 01_REQUIREMENTS.md Acceptance Criteria for this feature.
-
-### TASK-012: GET /api/engagements/{id} and list endpoint
-**Dependencies:** TASK-011.
-**Security Requirements:** Ownership filtering per TASK-010's pattern — no exceptions.
-
-### TASK-013: LLM scope-suggestion service + POST /api/engagements/{id}/scope-suggestion
-**Goal:** Implement the scoping service with the LLM call, timeout, and fallback behavior.
-**Dependencies:** TASK-006, TASK-012.
-**Relevant Documentation:** 01_REQUIREMENTS.md → PCI DSS Scope Matching; 02_ARCHITECTURE.md §7.6.
-**Implementation Constraints:** 8-second timeout; graceful degradation to `manual_scoping_required: true` — must never return 500 for an LLM-unavailable case.
-**Security Requirements:** Only structured profile fields sent to the LLM at this step — no evidence content (there is none yet at this stage, but confirm no accidental inclusion).
-**Tests Required:** Test the timeout/fallback path explicitly (mock the LLM client to simulate a timeout).
-
-### TASK-014: PATCH /api/scoped-requirements/{id}
-**Dependencies:** TASK-013.
-**Relevant Documentation:** 04_API_CONTRACT.md → PATCH /api/scoped-requirements/{id}.
+### TASK-109: Build `evidence_gate.py`
+**Dependencies:** TASK-107, TASK-108.
+**Relevant Documentation:** 01_REQUIREMENTS.md → Evidence Gate; 02_ARCHITECTURE.md (Evidence Gate must have zero external calls).
+**Implementation Constraints:** All 10 checks are mechanical (hash comparison, page-count lookup, timestamp comparison) — no LLM call anywhere in this module.
+**Tests Required:** One test per check category; specifically the fabricated-citation case (cite a page beyond document length) and the source_hash-mismatch case (alter a file after fact extraction, confirm detection).
 
 ---
 
-## Phase 6 — Core Feature B: Evidence, Matching, Review, Finalization
+## Phase R4 — Rescope GenAI Service
 
-### TASK-015: Evidence request generation
-**Dependencies:** TASK-014.
-**Relevant Documentation:** 01_REQUIREMENTS.md → Evidence Request Generation.
-**Tests Required:** Verify no duplicate requests generated for already-satisfied requirements.
+### TASK-110: Remove LLM authority from the existing finding-generation path
+**Goal:** This is the actual "conversion" step — whatever currently calls the LLM to produce a compliance judgment must be changed to call the rule engine + evidence gate instead, with the LLM call moved to an explanation-drafting role on the resulting `ControlEvaluation`.
+**Dependencies:** TASK-107, TASK-109, TASK-106.
+**Relevant Documentation:** 02_ARCHITECTURE.md §7.4 (GenAI Service MUST/MUST NOT); 01_REQUIREMENTS.md → Finding Review.
+**Implementation Constraints:** This is the single highest-risk task in the retrofit — search the existing codebase specifically for any place an LLM response is written into a field that determines compliance status, and redirect it. Do not leave a dead/parallel path where the old LLM-authoritative flow could still run for the frozen control set.
+**Tests Required:** For each of the 5–10 frozen controls, confirm the only path to `ControlEvaluation.result` is via `rule_engine.py`, with a test that would fail if that path were bypassed.
 
-### TASK-016: Evidence document upload endpoint + storage
-**Dependencies:** TASK-015.
-**Relevant Documentation:** 01_REQUIREMENTS.md → Evidence Document Ingestion; 05_SECURITY.md §10.4, §10.5.
-**Security Requirements:** Content-type inspection, size limit, filename sanitization, content-hash-addressed storage.
-**Tests Required:** Reject a disguised executable; reject an oversized file; accept a valid PDF.
-
-### TASK-017: Extraction pipeline (background worker)
-**Dependencies:** TASK-016.
-**Relevant Documentation:** 01_REQUIREMENTS.md → Evidence Document Ingestion (processing rules); 02_ARCHITECTURE.md §7.5, §7.6.
-**Implementation Constraints:** Async, non-blocking on the upload request; sets `extraction_status` explicitly; stuck-in-`processing` sweep after a timeout.
-**Tests Required:** Corrupt file → `extraction_failed`, not a crash; password-protected PDF → specific rejection.
-
-### TASK-018: Embedding + retrieval pipeline
-**Dependencies:** TASK-017, TASK-006.
-**Relevant Documentation:** 01_REQUIREMENTS.md → Evidence-to-Clause Matching (steps 1–2); 02_ARCHITECTURE.md §7.6.
-**Implementation Constraints:** Retrieval scoped only to the engagement's confirmed `ScopedRequirement` set, never the full corpus.
-
-### TASK-019: Finding-generation LLM service
-**Dependencies:** TASK-018.
-**Relevant Documentation:** 01_REQUIREMENTS.md → Evidence-to-Clause Matching (steps 3–4).
-**Implementation Constraints:** Every Finding created with `status=draft`; `needs_manual_review=true` if confidence < 0.6; LLM failure still creates a Finding (with nulls + manual-review flag), never silently drops it.
-**Security Requirements:** Log call metadata only, never the evidence content sent to the LLM (05_SECURITY.md §10.7).
-**Tests Required:** Confidence-threshold behavior; LLM-failure behavior; multi-clause-from-one-document case.
-
-### TASK-020: Finding review endpoints
-**Dependencies:** TASK-019, TASK-010.
-**Relevant Documentation:** 01_REQUIREMENTS.md → Finding Review; 04_API_CONTRACT.md → PATCH /api/findings/{id}/review.
-**Security Requirements:** `reviewed_by` always server-derived from session, never client-supplied. Reviewer-override case writes to FindingHistory, never silently overwrites.
-**Tests Required:** Accept/edit/reject paths; Reviewer-overrides-Auditor case with history verification.
-
-### TASK-021: Engagement finalization + report generation
-**Dependencies:** TASK-020.
-**Relevant Documentation:** 01_REQUIREMENTS.md → Engagement Finalization; 04_API_CONTRACT.md → POST /api/engagements/{id}/finalize.
-**Security Requirements:** Reviewer-role check enforced server-side — this is the task 05_SECURITY.md §10.11 calls out as requiring an explicit dedicated test.
-**Tests Required:** Unresolved-drafts blocks finalization with the correct list; non-Reviewer gets 403 regardless of UI state; already-finalized returns 409, not a duplicate Report.
+### TASK-111: Evidence-request drafting and explanation drafting via GenAI (non-authoritative)
+**Dependencies:** TASK-110.
+**Relevant Documentation:** 01_REQUIREMENTS.md; 02_ARCHITECTURE.md §7.6 (three permitted LLM uses).
+**Acceptance Criteria:** GenAI-drafted evidence-request text and `Finding.ai_explanation` populate correctly; disabling the LLM entirely still allows the Finding to display with raw facts/rule/result, just without prose.
 
 ---
 
-## Phase 8 — Testing and Hardening
+## Phase R5 — Test Company & Fixtures
 
-### TASK-022: Full authorization test suite pass
-**Goal:** Systematic test coverage of every ownership/role boundary across all endpoints, not just the ones exercised incidentally by feature tests.
-**Dependencies:** All of Phase 5–6.
-**Relevant Documentation:** 08_TESTING.md → Security Tests.
-
-### TASK-023: Dependency and secret scan
-**Dependencies:** All prior tasks.
-**Relevant Documentation:** 05_SECURITY.md §10.10, §10.11 checklist.
+### TASK-112: Build the ACME-Payments-style test audit
+**Dependencies:** TASK-103.
+**Relevant Documentation:** 01_REQUIREMENTS.md → Audit Creation (`test_company` flag); 00_PRODUCT.md §5.6.
+**Requirements:** Construct evidence documents (`password_config`, `iam_config`, `tls_config`, `logging_config` or equivalent, matching whatever the frozen 5–10 controls actually need) with deliberately varied outcomes: some PASS, some FAIL, one INSUFFICIENT (evidence deliberately omitted), one CONFLICT (two documents disagreeing).
+**Acceptance Criteria:** Running the full pipeline against this fixture set produces exactly the expected result distribution, not just "something for each."
 
 ---
 
-## Phase 9 — Deployment
+## Phase R6 — Adversarial Test Suite
 
-### TASK-024: Docker Compose production config + Cloudflare Tunnel wiring
-**Dependencies:** TASK-023.
-**Relevant Documentation:** 09_DEPLOYMENT.md.
-
-### TASK-025: First real engagement dry run
-**Goal:** Run one actual client engagement through the full system end to end, with a human Reviewer genuinely finalizing it.
-**Dependencies:** TASK-024.
-**Relevant Documentation:** 00_PRODUCT.md §5.6 (Success Criteria).
-**Acceptance Criteria:** This task's completion IS the Stage 1 exit condition referenced in the audit-copilot build sequence — a real, signed-off engagement, not a demo.
+### TASK-113: The five AI Safety tests
+**Dependencies:** TASK-110, TASK-112.
+**Relevant Documentation:** 05_SECURITY.md §10.11; 08_TESTING.md.
+**Requirements:** Implement all five as automated tests, run in CI, not manual demos: prompt-injection ("evil test"), hallucination, fabricated citation, contradiction, LLM-unavailable.
+**Acceptance Criteria:** All five pass. This task gates everything after it — do not proceed to R7 until it's green.
 
 ---
 
-**Parallelizable:** TASK-006 (corpus ingestion) can run in parallel with TASK-004/005/008 (independent of User/Engagement schema). TASK-009 can happen any time after TASK-008.
+## Phase R7 — UI/Review Wiring
 
-**High-risk tasks:** TASK-010 (ownership filtering — gets this wrong and every later feature inherits the flaw), TASK-019 (Finding generation — the core "does the AI actually help" question), TASK-021 (finalization — the core "human stays in control" guarantee).
+### TASK-114: Update the review queue UI to show system_result vs. auditor_decision distinctly
+**Dependencies:** TASK-106, TASK-111.
+**Relevant Documentation:** 04_API_CONTRACT.md → GET /api/audits/{id}/findings; 01_REQUIREMENTS.md → Finding Review.
+**Implementation Constraints:** The UI must make `gate_status=REJECTED` visually unmistakable from a normally-verified result — this is a UX requirement with a security rationale, not a cosmetic one.
+
+### TASK-115: Update report generation/export to include the full snapshot
+**Dependencies:** TASK-114.
+**Relevant Documentation:** 03_DATA_MODEL.md → Report.
+
+---
+
+## Phase R8 — Level 0 Acceptance
+
+### TASK-116: Run the full PoC acceptance test table
+**Dependencies:** All of R1–R7.
+**Relevant Documentation:** 00_PRODUCT.md §5.6 (the eleven-row acceptance table).
+**Acceptance Criteria:** Every row of the table passes as an automated test. This task's completion, not a demo, is what makes Level 0 done.
+
+### TASK-117: First real (or realistic) audit run, human-finalized
+**Dependencies:** TASK-116.
+**Acceptance Criteria:** One audit — real or the constructed test company — runs fully through the system and is genuinely finalized by a human Reviewer, matching the original build sequence's Stage-1 exit condition.
+
+---
+
+**High-risk tasks:** TASK-110 (removing LLM authority from an existing, presumably-working path — easy to leave a bypass), TASK-107/TASK-109 (the two modules whose entire value is having zero LLM dependency — any accidental import breaks the core trust property), TASK-113 (the adversarial suite — this is where "looks done" and "is actually trustworthy" diverge).
