@@ -34,7 +34,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U auditlens"
+          --health-cmd "pg_isready -U auditlens -d auditlens_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
@@ -54,6 +54,7 @@ jobs:
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+          cache-dependency-glob: "backend/pyproject.toml"
 
       - name: Set up Python
         run: uv python install 3.12
@@ -128,7 +129,7 @@ jobs:
         run: |
           uv venv
           uv pip install -e ".[dev]"
-          .venv/bin/pip-audit --strict --desc
+          .venv/bin/pip-audit --strict --desc --skip-editable
 
       - uses: actions/setup-node@v4
         with:

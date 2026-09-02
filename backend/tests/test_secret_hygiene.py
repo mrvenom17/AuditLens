@@ -460,11 +460,16 @@ class TestNoSecretsInVersionControl:
 
         assert not offenders, f"Connection strings with embedded credentials: {offenders}"
 
-    def test_settings_defaults_are_not_usable_in_production(self) -> None:
+    def test_settings_defaults_are_not_usable_in_production(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """The development defaults exist so tests and tooling can import
         settings. `validate_for_environment` is what stops them reaching
         production, so it has to actually reject them."""
         from app.config.settings import DEV_SESSION_SECRET, Settings
+
+        for var in ("DATABASE_URL", "SESSION_SECRET", "LLM_API_KEY", "CORS_ALLOWED_ORIGIN"):
+            monkeypatch.delenv(var, raising=False)
 
         # `_env_file=None` so this tests the *defaults*, not whatever the
         # developer happens to have in their local .env.
