@@ -129,7 +129,8 @@ jobs:
         run: |
           uv venv
           uv pip install -e ".[dev]"
-          .venv/bin/pip-audit --strict --desc --skip-editable
+          uv pip compile pyproject.toml --extra dev -o requirements.txt
+          .venv/bin/pip-audit -r requirements.txt --strict --desc
 
       - uses: actions/setup-node@v4
         with:
