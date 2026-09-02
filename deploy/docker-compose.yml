@@ -95,6 +95,8 @@ services:
     build:
       context: ../frontend
       dockerfile: Dockerfile
+      args:
+        API_INTERNAL_URL: http://api:8000
     environment:
       # Server-side calls go container-to-container; the browser never sees this.
       API_INTERNAL_URL: http://api:8000

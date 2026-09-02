@@ -35,6 +35,7 @@ export function AppNav({ user }: { user: CurrentUser }) {
 
   const links = [
     { href: "/audits", label: "Audits" },
+    { href: "/corpus", label: "Corpus" },
     ...(user.role === "admin" ? [{ href: "/admin/users", label: "Users" }] : []),
   ];
 

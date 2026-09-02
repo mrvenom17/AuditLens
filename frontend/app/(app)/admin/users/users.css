@@ -1,0 +1,57 @@
+.users-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.users-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.new-user-form {
+  padding: 2rem;
+  background-color: var(--surface-raised);
+}
+
+.new-user-form h3 {
+  margin-bottom: 1.5rem;
+  font-size: 1.25rem;
+  font-weight: 500;
+}
+
+.new-user-form .form-group {
+  margin-bottom: 1.25rem;
+}
+
+.new-user-form label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+  color: var(--text-base);
+}
+
+.new-user-form input,
+.new-user-form select {
+  width: 100%;
+  padding: 0.75rem;
+  border-radius: 6px;
+  border: 1px solid var(--surface-border);
+  background-color: rgba(0, 0, 0, 0.2);
+  color: var(--text-base);
+  font-family: var(--font-sans);
+}
+
+.new-user-form input:focus,
+.new-user-form select:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+}
+
+.new-user-form .form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+  margin-top: 2rem;
+}

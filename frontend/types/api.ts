@@ -545,3 +545,51 @@ export const ROLE_LABELS: Record<Role, string> = {
   reviewer: "Reviewer",
   admin: "Admin",
 };
+
+/* --- Corpus / Control Definitions ----------------------------------------- */
+
+export interface FactSpec {
+  name: string;
+  type: string;
+}
+
+export interface RuleSpec {
+  fact: string;
+  operator: string;
+  expected?: unknown;
+}
+
+export interface EvidenceRequirementSpec {
+  type: string;
+  description: string;
+}
+
+export interface ControlDefinitionResponse {
+  id: string;
+  control_id: string;
+  name: string;
+  requirement_text: string;
+  requirement_family: number;
+  evaluation_mode: EvaluationMode;
+  evidence_requirements: EvidenceRequirementSpec[];
+  facts: FactSpec[];
+  rules: RuleSpec[];
+  freshness_window_days: number | null;
+  corpus_version: string;
+  superseded_by: string | null;
+  created_at: string;
+}
+
+/* --- Admin User Management -------------------------------------------------- */
+
+export interface AdminUserCreate {
+  email: string;
+  name: string;
+  role: Role;
+  password: string;
+}
+
+export interface AdminUserUpdate {
+  is_active?: boolean | null;
+  role?: Role | null;
+}

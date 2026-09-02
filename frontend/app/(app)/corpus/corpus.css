@@ -1,0 +1,94 @@
+.corpus-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.control-card {
+  display: flex;
+  flex-direction: column;
+  padding: 1.5rem;
+}
+
+.control-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--surface-border);
+}
+
+.control-id {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 1.1rem;
+  color: var(--primary);
+}
+
+.control-name {
+  font-weight: 500;
+  font-size: 1.1rem;
+  color: var(--text-base);
+  flex-grow: 1;
+}
+
+.control-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.requirement-text p {
+  margin-top: 0.5rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.mechanics-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  background-color: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--surface-border);
+  border-radius: 8px;
+  padding: 1.5rem;
+}
+
+.mechanic-section strong {
+  display: block;
+  margin-bottom: 0.75rem;
+  color: var(--text-base);
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.fact-list, .rule-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.fact-list li, .rule-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background-color: var(--surface-raised);
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  border: 1px solid var(--surface-border);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+}
+
+.rule-list li strong {
+  margin: 0;
+  color: var(--primary);
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: 0.85rem;
+}
