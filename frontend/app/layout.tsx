@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
+import { IBM_Plex_Mono, Inter } from "next/font/google";
 
 import "./globals.css";
 
@@ -13,9 +13,8 @@ import "./globals.css";
  * Self-hosted at build time by next/font, so no request leaves the origin at
  * runtime and the strict CSP is satisfied.
  */
-const sans = IBM_Plex_Sans({
+const sans = Inter({
   subsets: ["latin"],
-  weight: ["400", "500", "600"],
   variable: "--font-sans",
   display: "swap",
 });

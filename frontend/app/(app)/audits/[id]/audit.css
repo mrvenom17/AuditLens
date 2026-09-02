@@ -12,9 +12,14 @@
 .rail {
   display: flex;
   flex-direction: column;
-  gap: 0.9rem;
+  gap: 1.25rem;
   position: sticky;
-  top: 4.25rem;
+  top: 4.5rem;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-radius: var(--radius);
+  padding: 0;
 }
 
 .rail .panel-head {
@@ -34,9 +39,10 @@
 
 .progress-fill {
   height: 100%;
-  background: var(--accent);
+  background: linear-gradient(90deg, var(--accent), #60a5fa);
   border-radius: 999px;
-  transition: width 0.3s ease;
+  transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 0 8px rgba(37, 99, 235, 0.4);
 }
 
 .rail-progress-label {
@@ -173,8 +179,13 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
-  padding: 0.8rem 1rem;
+  padding: 1rem 1.25rem;
   border-bottom: 1px solid var(--border);
+  transition: background-color 0.2s ease;
+}
+
+.doc:hover {
+  background: var(--surface-sunken);
 }
 
 .doc:last-child {
@@ -244,8 +255,13 @@
 }
 
 .finding {
-  padding: 0.9rem 1rem;
+  padding: 1.25rem;
   border-bottom: 1px solid var(--border);
+  transition: background-color 0.2s ease;
+}
+
+.finding:hover {
+  background: rgba(0,0,0,0.01);
 }
 
 .finding:last-child {
@@ -338,10 +354,11 @@
 
 /* --- Sign off --------------------------------------------------------------- */
 
-/* The terminal action gets the authority hue on its top edge — the only panel
-   in the product that does, because it is the only one that ends something. */
+/* The terminal action gets a premium gradient border. */
 .finalize {
-  border-top: 2px solid var(--accent);
+  border-top: 3px solid;
+  border-image: linear-gradient(to right, var(--accent), var(--machine)) 1;
+  background: linear-gradient(to bottom, var(--accent-wash), transparent);
 }
 
 .note-ready {

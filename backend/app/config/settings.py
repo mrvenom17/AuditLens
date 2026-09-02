@@ -44,6 +44,21 @@ class Settings(BaseSettings):
     EMBEDDING_MODEL_PATH: str = "BAAI/bge-small-en-v1.5"
     EMBEDDING_DIMENSIONS: int = 384
 
+    # --- OCR ---------------------------------------------------------------
+    # `tesseract` runs locally and needs no key; the API providers read scanned
+    # and photographed evidence far better, at the cost of sending the image to
+    # a third party. That is a real disclosure decision for client evidence, so
+    # the default stays local and switching is explicit.
+    OCR_PROVIDER: Literal["tesseract", "google_vision", "ocr_space"] = "tesseract"
+    OCR_API_KEY: SecretStr = SecretStr("")
+    # Overridable so a self-hosted or proxied endpoint can be used instead.
+    OCR_API_URL: str = ""
+    OCR_TIMEOUT_SECONDS: float = 30.0
+    # When the API fails, retry locally rather than failing the document. The
+    # auditor gets *some* text plus a logged warning, instead of an upload that
+    # silently yields nothing.
+    OCR_FALLBACK_TO_LOCAL: bool = True
+
     # --- Storage -----------------------------------------------------------
     FILE_STORAGE_PATH: str = "./data/evidence"
     MAX_UPLOAD_SIZE_MB: int = 25

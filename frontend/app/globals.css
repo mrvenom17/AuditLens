@@ -1,73 +1,125 @@
 /* AuditLens design tokens.
- *
- * The organising idea is provenance. Two kinds of content appear on nearly
- * every screen: what a machine suggested, and what a human determined. ADR-003
- * makes never confusing the two the product's entire trust claim, so the visual
- * system encodes it rather than decorating around it.
- *
- * The rule: `--machine` appears if and only if an AI produced that content.
- * It is used for no other purpose anywhere — not for links, not for focus, not
- * for a nice accent. Reserving a hue only works if the reservation is absolute.
+ * A modern, premium interface supporting system light/dark mode with 
+ * glassmorphism and dynamic micro-animations.
  */
 
 :root {
-  /* Ground and ink — cool paper, for a tool people read for hours. */
-  --ground: #f6f7f9;
-  --surface: #ffffff;
-  --surface-sunken: #eef0f4;
-  --border: #d9dde4;
-  --border-strong: #b9c0cb;
+  color-scheme: light dark;
 
-  --ink: #14181f;
-  --ink-muted: #5d6673;
-  --ink-faint: #838c99;
+  /* --- LIGHT MODE TOKENS --- */
+  --ground: #f4f6f8;
+  --surface: rgba(255, 255, 255, 0.7);
+  --surface-solid: #ffffff;
+  --surface-sunken: rgba(238, 240, 244, 0.7);
+  --border: rgba(217, 221, 228, 0.6);
+  --border-strong: rgba(185, 192, 203, 0.8);
+  --border-glow: rgba(255, 255, 255, 0.5);
 
-  /* Authority. Sign-off, primary actions, the firm's own voice. */
-  --accent: #0f4c4a;
-  --accent-hover: #0a3a38;
+  --ink: #111418;
+  --ink-muted: #535c68;
+  --ink-faint: #8a94a2;
+
+  /* Vibrant Accent */
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
   --accent-ink: #ffffff;
-  --accent-wash: #e8f1f0;
+  --accent-wash: rgba(37, 99, 235, 0.08);
 
-  /* Machine provenance. Reserved. See the note above. */
-  --machine: #6b5ca5;
-  --machine-wash: #f3f1fa;
-  --machine-border: #d6cfea;
+  /* Machine (AI) Provenance */
+  --machine: #8b5cf6;
+  --machine-wash: rgba(139, 92, 246, 0.06);
+  --machine-border: rgba(139, 92, 246, 0.3);
+  --machine-glow: 0 0 12px rgba(139, 92, 246, 0.15);
 
-  /* The deterministic engine. Deliberately not --machine: a rule-produced
-   * result and model-written prose are different kinds of claim, and the UI
-   * says so before a word is read. */
-  --engine: #2e6b5a;
-  --engine-wash: #ecf4f1;
-  --engine-border: #c8ded6;
+  /* Engine (Rules) Provenance */
+  --engine: #0d9488;
+  --engine-wash: rgba(13, 148, 136, 0.06);
+  --engine-border: rgba(13, 148, 136, 0.3);
 
-  /* Determination statuses. Distinct from --machine by construction, because a
-   * determination is precisely the thing a machine cannot make. */
-  --satisfied: #1c6b45;
-  --satisfied-wash: #e9f4ee;
-  --partial: #8a5a00;
-  --partial-wash: #fdf4e3;
-  --not-satisfied: #a8201a;
-  --not-satisfied-wash: #fdefee;
-  --not-applicable: #5d6673;
-  --not-applicable-wash: #eef0f4;
+  /* Determinations */
+  --satisfied: #10b981;
+  --satisfied-wash: rgba(16, 185, 129, 0.1);
+  --partial: #f59e0b;
+  --partial-wash: rgba(245, 158, 11, 0.1);
+  --not-satisfied: #ef4444;
+  --not-satisfied-wash: rgba(239, 68, 68, 0.1);
+  --not-applicable: #64748b;
+  --not-applicable-wash: rgba(100, 116, 139, 0.1);
 
-  /* Attention states. 02_ARCHITECTURE.md §7.4 requires needs_manual_review and
-   * extraction_failed be first-class UI states, not edge cases bolted on. */
-  --attention: #8a5a00;
-  --attention-wash: #fdf4e3;
-  --attention-border: #e8cf9a;
-  --failed: #a8201a;
-  --failed-wash: #fdefee;
-  --failed-border: #f0c4c1;
+  /* Attention states */
+  --attention: #ea580c;
+  --attention-wash: rgba(234, 88, 12, 0.08);
+  --attention-border: rgba(234, 88, 12, 0.3);
+  --failed: #e11d48;
+  --failed-wash: rgba(225, 29, 72, 0.08);
+  --failed-border: rgba(225, 29, 72, 0.3);
 
-  --radius: 5px;
-  --radius-sm: 3px;
+  --radius: 12px;
+  --radius-sm: 8px;
+  --radius-pill: 9999px;
 
-  /* A single soft elevation. A dense tool does not need a shadow scale. */
-  --shadow: 0 1px 2px rgba(20, 24, 31, 0.06), 0 1px 3px rgba(20, 24, 31, 0.04);
-  --shadow-lift: 0 2px 4px rgba(20, 24, 31, 0.08), 0 4px 12px rgba(20, 24, 31, 0.06);
+  /* Smooth soft shadows */
+  --shadow: 0 4px 12px rgba(0, 0, 0, 0.03), 0 1px 3px rgba(0, 0, 0, 0.02);
+  --shadow-lift: 0 10px 25px rgba(0, 0, 0, 0.06), 0 4px 10px rgba(0, 0, 0, 0.04);
+  
+  /* Glass effects */
+  --glass-bg: rgba(255, 255, 255, 0.6);
+  --glass-border: rgba(255, 255, 255, 0.8);
+  --glass-blur: blur(16px);
 
-  --rail: 15rem;
+  --rail: 18rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ground: #0a0a0b;
+    --surface: rgba(24, 24, 27, 0.6);
+    --surface-solid: #18181b;
+    --surface-sunken: rgba(39, 39, 42, 0.5);
+    --border: rgba(63, 63, 70, 0.6);
+    --border-strong: rgba(82, 82, 91, 0.8);
+    --border-glow: rgba(255, 255, 255, 0.05);
+
+    --ink: #f4f4f5;
+    --ink-muted: #a1a1aa;
+    --ink-faint: #71717a;
+
+    --accent: #3b82f6;
+    --accent-hover: #60a5fa;
+    --accent-ink: #ffffff;
+    --accent-wash: rgba(59, 130, 246, 0.15);
+
+    --machine: #a78bfa;
+    --machine-wash: rgba(167, 139, 250, 0.12);
+    --machine-border: rgba(167, 139, 250, 0.4);
+    --machine-glow: 0 0 16px rgba(167, 139, 250, 0.2);
+
+    --engine: #2dd4bf;
+    --engine-wash: rgba(45, 212, 191, 0.12);
+    --engine-border: rgba(45, 212, 191, 0.4);
+
+    --satisfied: #34d399;
+    --satisfied-wash: rgba(52, 211, 153, 0.15);
+    --partial: #fbbf24;
+    --partial-wash: rgba(251, 191, 36, 0.15);
+    --not-satisfied: #f87171;
+    --not-satisfied-wash: rgba(248, 113, 113, 0.15);
+    --not-applicable: #94a3b8;
+    --not-applicable-wash: rgba(148, 163, 184, 0.15);
+
+    --attention: #fb923c;
+    --attention-wash: rgba(251, 146, 60, 0.15);
+    --attention-border: rgba(251, 146, 60, 0.4);
+    --failed: #fb7185;
+    --failed-wash: rgba(251, 113, 133, 0.15);
+    --failed-border: rgba(251, 113, 133, 0.4);
+
+    --shadow: 0 4px 12px rgba(0, 0, 0, 0.2), 0 1px 3px rgba(0, 0, 0, 0.1);
+    --shadow-lift: 0 10px 25px rgba(0, 0, 0, 0.4), 0 4px 10px rgba(0, 0, 0, 0.2);
+
+    --glass-bg: rgba(24, 24, 27, 0.6);
+    --glass-border: rgba(255, 255, 255, 0.08);
+  }
 }
 
 *,
@@ -85,14 +137,13 @@ body {
 body {
   background: var(--ground);
   color: var(--ink);
-  font-family: var(--font-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family: var(--font-sans), ui-sans-serif, system-ui, -apple-system, sans-serif;
   font-size: 0.9375rem;
-  line-height: 1.5;
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
-/* Mono is for identifiers and machine output only: clause ids, confidence
- * scores, hashes, timestamps. Not for emphasis, and not for prose. */
 .mono,
 code,
 kbd {
@@ -107,36 +158,27 @@ h3,
 h4 {
   margin: 0;
   font-weight: 600;
-  letter-spacing: -0.011em;
-  line-height: 1.25;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
 }
 
-h1 {
-  font-size: 1.375rem;
-}
-h2 {
-  font-size: 1.0625rem;
-}
-h3 {
-  font-size: 0.9375rem;
-}
+h1 { font-size: 1.75rem; }
+h2 { font-size: 1.25rem; }
+h3 { font-size: 1rem; }
 
-p {
-  margin: 0;
-}
+p { margin: 0; }
 
 a {
   color: var(--accent);
-  text-decoration-color: color-mix(in srgb, var(--accent) 35%, transparent);
-  text-underline-offset: 2px;
+  text-decoration-color: transparent;
+  text-underline-offset: 4px;
+  transition: text-decoration-color 0.2s ease, color 0.2s ease;
 }
 
 a:hover {
   text-decoration-color: currentColor;
 }
 
-/* One focus treatment everywhere. Auditors work through queues at speed and
- * keyboard use is normal, so focus has to be unmissable rather than tasteful. */
 :where(a, button, input, select, textarea, [tabindex]):focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -159,37 +201,46 @@ button:disabled {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.4rem;
-  padding: 0.45rem 0.85rem;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);
-  background: var(--surface);
+  background: var(--surface-solid);
   color: var(--ink);
   font-size: 0.875rem;
-  font-weight: 500;
+  font-weight: 600;
   white-space: nowrap;
-  transition: background-color 0.12s ease, border-color 0.12s ease;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .btn:hover:not(:disabled) {
   background: var(--surface-sunken);
-  border-color: var(--ink-faint);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
 }
 
 .btn-primary {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--accent-ink);
+  box-shadow: 0 1px 3px rgba(37, 99, 235, 0.3);
 }
 
 .btn-primary:hover:not(:disabled) {
   background: var(--accent-hover);
   border-color: var(--accent-hover);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);
 }
 
 .btn-danger {
   color: var(--not-satisfied);
-  border-color: color-mix(in srgb, var(--not-satisfied) 35%, var(--border));
+  border-color: color-mix(in srgb, var(--not-satisfied) 40%, var(--border));
 }
 
 .btn-danger:hover:not(:disabled) {
@@ -198,21 +249,28 @@ button:disabled {
 }
 
 .btn-sm {
-  padding: 0.3rem 0.6rem;
+  padding: 0.35rem 0.7rem;
   font-size: 0.8125rem;
+  border-radius: var(--radius-sm);
 }
 
 .btn-ghost {
   border-color: transparent;
   background: transparent;
+  box-shadow: none;
+}
+.btn-ghost:hover:not(:disabled) {
+  background: var(--surface-sunken);
+  box-shadow: none;
 }
 
 label {
   display: block;
   font-size: 0.8125rem;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--ink-muted);
-  margin-bottom: 0.3rem;
+  margin-bottom: 0.4rem;
+  letter-spacing: 0.01em;
 }
 
 input,
@@ -220,17 +278,21 @@ select,
 textarea {
   font: inherit;
   width: 100%;
-  padding: 0.5rem 0.65rem;
+  padding: 0.6rem 0.75rem;
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  background: var(--surface);
+  border-radius: var(--radius-sm);
+  background: var(--surface-solid);
   color: var(--ink);
+  transition: border-color 0.2s, box-shadow 0.2s;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.02);
 }
 
 input:focus,
 select:focus,
 textarea:focus {
   border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-wash);
+  outline: none;
 }
 
 textarea {
@@ -239,7 +301,7 @@ textarea {
 }
 
 .field {
-  margin-bottom: 0.9rem;
+  margin-bottom: 1rem;
 }
 
 .hint {
@@ -251,10 +313,18 @@ textarea {
 /* --- Surfaces --------------------------------------------------------------- */
 
 .panel {
-  background: var(--surface);
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
   border: 1px solid var(--border);
+  border-top: 1px solid var(--glass-border);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.panel:hover {
+  box-shadow: var(--shadow-lift);
 }
 
 .panel-head {
@@ -262,12 +332,13 @@ textarea {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 0.8rem 1rem;
+  padding: 1rem 1.25rem;
   border-bottom: 1px solid var(--border);
+  background: linear-gradient(to bottom, rgba(255,255,255,0.05), transparent);
 }
 
 .panel-body {
-  padding: 1rem;
+  padding: 1.25rem;
 }
 
 /* --- Tables ----------------------------------------------------------------- */
@@ -279,21 +350,23 @@ table {
 
 th {
   text-align: left;
-  padding: 0.55rem 1rem;
+  padding: 0.75rem 1rem;
   font-size: 0.75rem;
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--ink-muted);
-  border-bottom: 1px solid var(--border);
-  background: var(--surface-sunken);
+  border-bottom: 2px solid var(--border);
+  background: rgba(0,0,0,0.02);
   white-space: nowrap;
 }
+@media (prefers-color-scheme: dark) { th { background: rgba(255,255,255,0.02); } }
 
 td {
-  padding: 0.6rem 1rem;
+  padding: 0.85rem 1rem;
   border-bottom: 1px solid var(--border);
-  vertical-align: top;
+  vertical-align: middle;
+  transition: background-color 0.2s ease;
 }
 
 tbody tr:last-child td {
@@ -301,7 +374,7 @@ tbody tr:last-child td {
 }
 
 tbody tr:hover td {
-  background: color-mix(in srgb, var(--surface-sunken) 55%, transparent);
+  background: var(--surface-sunken);
 }
 
 /* --- Status pills ----------------------------------------------------------- */
@@ -309,55 +382,50 @@ tbody tr:hover td {
 .pill {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
-  padding: 0.1rem 0.45rem;
-  border-radius: 999px;
+  gap: 0.35rem;
+  padding: 0.15rem 0.6rem;
+  border-radius: var(--radius-pill);
   border: 1px solid transparent;
   font-size: 0.75rem;
   font-weight: 600;
   white-space: nowrap;
+  letter-spacing: 0.02em;
 }
 
 .pill-satisfied {
   background: var(--satisfied-wash);
   color: var(--satisfied);
-  border-color: color-mix(in srgb, var(--satisfied) 22%, transparent);
+  border-color: color-mix(in srgb, var(--satisfied) 30%, transparent);
 }
 .pill-partial {
   background: var(--partial-wash);
   color: var(--partial);
-  border-color: color-mix(in srgb, var(--partial) 25%, transparent);
+  border-color: color-mix(in srgb, var(--partial) 30%, transparent);
 }
 .pill-not_satisfied {
   background: var(--not-satisfied-wash);
   color: var(--not-satisfied);
-  border-color: color-mix(in srgb, var(--not-satisfied) 22%, transparent);
+  border-color: color-mix(in srgb, var(--not-satisfied) 30%, transparent);
 }
 .pill-not_applicable {
   background: var(--not-applicable-wash);
   color: var(--not-applicable);
-  border-color: color-mix(in srgb, var(--not-applicable) 22%, transparent);
+  border-color: color-mix(in srgb, var(--not-applicable) 30%, transparent);
 }
-/* --- Six-state system result (00_PRODUCT.md §5.5) ---------------------------
- * Mapped onto the existing determination hues rather than new ones: PASS reads
- * as satisfied, FAIL as not-satisfied, and the three "we could not say" states
- * share the attention hue, because that is what they mean to an auditor working
- * a queue — something here needs your judgment.
- */
 .pill-PASS {
   background: var(--satisfied-wash);
   color: var(--satisfied);
-  border-color: color-mix(in srgb, var(--satisfied) 22%, transparent);
+  border-color: color-mix(in srgb, var(--satisfied) 30%, transparent);
 }
 .pill-FAIL {
   background: var(--not-satisfied-wash);
   color: var(--not-satisfied);
-  border-color: color-mix(in srgb, var(--not-satisfied) 22%, transparent);
+  border-color: color-mix(in srgb, var(--not-satisfied) 30%, transparent);
 }
 .pill-PARTIAL {
   background: var(--partial-wash);
   color: var(--partial);
-  border-color: color-mix(in srgb, var(--partial) 25%, transparent);
+  border-color: color-mix(in srgb, var(--partial) 30%, transparent);
 }
 .pill-INSUFFICIENT_EVIDENCE,
 .pill-CONFLICT {
@@ -368,17 +436,13 @@ tbody tr:hover td {
 .pill-NOT_APPLICABLE {
   background: var(--not-applicable-wash);
   color: var(--not-applicable);
-  border-color: color-mix(in srgb, var(--not-applicable) 22%, transparent);
+  border-color: color-mix(in srgb, var(--not-applicable) 30%, transparent);
 }
 
-/* --- Evidence strength -------------------------------------------------------
- * Muted on purpose. Strength is a qualifier on a result, not a result — it must
- * not compete for attention with the verdict or the gate warning beside it.
- */
 .pill-strength-STRONG {
   background: var(--satisfied-wash);
   color: var(--satisfied);
-  border-color: color-mix(in srgb, var(--satisfied) 22%, transparent);
+  border-color: color-mix(in srgb, var(--satisfied) 30%, transparent);
 }
 .pill-strength-MODERATE {
   background: var(--surface-sunken);
@@ -391,13 +455,6 @@ tbody tr:hover td {
   color: var(--attention);
   border-color: var(--attention-border);
 }
-
-/* --- Applicability ----------------------------------------------------------
- * UNDETERMINED gets the attention hue, not a neutral one. It means a profile
- * question went unanswered, which is a thing the auditor can actually fix — and
- * until they do, the engine cannot decide whether the control belongs in the
- * audit at all.
- */
 .pill-applicability-IN_SCOPE {
   background: var(--surface-sunken);
   color: var(--ink-muted);
@@ -406,33 +463,12 @@ tbody tr:hover td {
 .pill-applicability-NOT_APPLICABLE {
   background: var(--not-applicable-wash);
   color: var(--not-applicable);
-  border-color: color-mix(in srgb, var(--not-applicable) 22%, transparent);
+  border-color: color-mix(in srgb, var(--not-applicable) 30%, transparent);
 }
 .pill-applicability-UNDETERMINED {
   background: var(--attention-wash);
   color: var(--attention);
   border-color: var(--attention-border);
-}
-
-/* The requirement being assessed, above the verdict. Quiet, but first — an
- * auditor cannot judge a result against a clause number alone. */
-.requirement {
-  border-left: 3px solid var(--border-strong);
-  padding-left: 0.85rem;
-}
-
-.requirement .procedures {
-  margin-top: 0.35rem;
-}
-
-.requirement .procedures summary {
-  cursor: pointer;
-  color: var(--ink-muted);
-}
-
-.requirement .procedures ol {
-  margin: 0.35rem 0 0;
-  padding-left: 1.1rem;
 }
 
 .pill-neutral {
@@ -451,166 +487,144 @@ tbody tr:hover td {
   border-color: var(--failed-border);
 }
 
-/* --- Machine provenance ------------------------------------------------------
- * The signature treatment. AI-derived content sits on its own tinted surface
- * with a solid left edge in the reserved hue and a mono attribution line, so it
- * is never mistaken for a determination — including at a glance, which is how
- * an auditor working a queue will actually read it.
- */
+.requirement {
+  border-left: 3px solid var(--accent);
+  padding-left: 1rem;
+  background: linear-gradient(to right, var(--accent-wash), transparent);
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+.requirement .procedures { margin-top: 0.5rem; }
+.requirement .procedures summary { cursor: pointer; color: var(--ink-muted); font-weight: 500; transition: color 0.2s;}
+.requirement .procedures summary:hover { color: var(--ink); }
+.requirement .procedures ol { margin: 0.5rem 0 0; padding-left: 1.5rem; }
 
+/* --- Machine provenance ------------------------------------------------------ */
 .machine {
   background: var(--machine-wash);
   border: 1px solid var(--machine-border);
-  border-left: 3px solid var(--machine);
+  border-left: 4px solid var(--machine);
   border-radius: var(--radius-sm);
-  padding: 0.7rem 0.85rem;
+  padding: 1rem;
+  box-shadow: var(--machine-glow);
+  position: relative;
+  overflow: hidden;
 }
-
+.machine::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0; height: 1px;
+  background: linear-gradient(to right, var(--machine), transparent);
+  opacity: 0.3;
+}
 .machine-label {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.5rem;
   font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 0.6875rem;
-  font-weight: 500;
-  letter-spacing: 0.04em;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--machine);
-  margin-bottom: 0.4rem;
+  margin-bottom: 0.6rem;
 }
-
-/* Once a human has ruled, the machine block recedes but is never removed —
- * 01_REQUIREMENTS.md requires the original suggestion be retained for the audit
- * trail even when a human overrides it. */
-.machine-superseded {
-  opacity: 0.62;
-}
+.machine-superseded { opacity: 0.5; filter: grayscale(50%); }
 
 .determination {
-  border-left: 3px solid var(--border-strong);
-  padding-left: 0.85rem;
+  border-left: 4px solid var(--border-strong);
+  padding-left: 1rem;
+  background: linear-gradient(to right, rgba(0,0,0,0.02), transparent);
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
 }
+@media (prefers-color-scheme: dark) { .determination { background: linear-gradient(to right, rgba(255,255,255,0.02), transparent); } }
 
-.determination-satisfied {
-  border-left-color: var(--satisfied);
-}
-.determination-partial {
-  border-left-color: var(--partial);
-}
-.determination-not_satisfied {
-  border-left-color: var(--not-satisfied);
-}
-.determination-not_applicable {
-  border-left-color: var(--not-applicable);
-}
-.determination-PASS {
-  border-left-color: var(--satisfied);
-}
-.determination-FAIL {
-  border-left-color: var(--not-satisfied);
-}
-.determination-PARTIAL {
-  border-left-color: var(--partial);
-}
-.determination-INSUFFICIENT_EVIDENCE,
-.determination-CONFLICT {
-  border-left-color: var(--attention);
-}
-.determination-NOT_APPLICABLE {
-  border-left-color: var(--not-applicable);
-}
+.determination-satisfied { border-left-color: var(--satisfied); }
+.determination-partial { border-left-color: var(--partial); }
+.determination-not_satisfied { border-left-color: var(--not-satisfied); }
+.determination-not_applicable { border-left-color: var(--not-applicable); }
+.determination-PASS { border-left-color: var(--satisfied); }
+.determination-FAIL { border-left-color: var(--not-satisfied); }
+.determination-PARTIAL { border-left-color: var(--partial); }
+.determination-INSUFFICIENT_EVIDENCE, .determination-CONFLICT { border-left-color: var(--attention); }
+.determination-NOT_APPLICABLE { border-left-color: var(--not-applicable); }
 
-/* --- Engine provenance -------------------------------------------------------
- * The counterpart to `.machine`, and the visual heart of this revision.
- *
- * A deterministic result and an AI explanation must never look alike, because
- * the entire product claim is that they are different kinds of thing. `.machine`
- * keeps the reserved AI hue for prose a model wrote. `.engine` gets its own
- * treatment for a result a rule produced: squarer, cooler, with a mono readout
- * of the rule that fired. An auditor should be able to tell which is which from
- * across the room, not by reading a label.
- */
+/* --- Engine provenance ------------------------------------------------------- */
 .engine {
   background: var(--engine-wash);
   border: 1px solid var(--engine-border);
-  border-left: 3px solid var(--engine);
+  border-left: 4px solid var(--engine);
   border-radius: var(--radius-sm);
-  padding: 0.7rem 0.85rem;
+  padding: 1rem;
+  position: relative;
 }
-
 .engine-label {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.5rem;
   font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 0.6875rem;
-  font-weight: 500;
-  letter-spacing: 0.04em;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--engine);
-  margin-bottom: 0.4rem;
+  margin-bottom: 0.6rem;
 }
-
-/* The rule that actually fired, shown verbatim. An auditor can check the
- * arithmetic themselves, which is the whole point of a deterministic result. */
 .engine-rule {
   font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 0.75rem;
   color: var(--ink-muted);
-  margin-top: 0.35rem;
+  margin-top: 0.5rem;
+  background: rgba(0,0,0,0.03);
+  padding: 0.4rem 0.6rem;
+  border-radius: var(--radius-sm);
 }
+@media (prefers-color-scheme: dark) { .engine-rule { background: rgba(255,255,255,0.05); } }
 
-/* --- Unverified by the Evidence Gate -----------------------------------------
- * 01_REQUIREMENTS.md § Finding Review, Edge Cases: a result the gate could not
- * verify "must not look the same" as one it could. This is a security
- * requirement wearing UX clothing, so it gets the loudest treatment in the
- * stylesheet — a hatched edge no other state uses.
- */
+/* --- Unverified by the Evidence Gate ----------------------------------------- */
 .unverified {
-  border-left-width: 3px;
+  border-left-width: 4px;
   border-left-style: dashed;
   border-left-color: var(--failed);
   background: var(--failed-wash);
   border-top: 1px solid var(--failed-border);
   border-right: 1px solid var(--failed-border);
   border-bottom: 1px solid var(--failed-border);
+  border-radius: var(--radius-sm);
 }
-
 .unverified-label {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.5rem;
   font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   font-weight: 700;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--failed);
-  margin-bottom: 0.4rem;
+  margin-bottom: 0.6rem;
 }
-
-.gate-checks {
-  margin: 0.3rem 0 0;
-  padding-left: 1.1rem;
-}
+.gate-checks { margin: 0.5rem 0 0; padding-left: 1.5rem; }
 
 /* --- Callouts --------------------------------------------------------------- */
-
 .note {
-  padding: 0.7rem 0.85rem;
+  padding: 0.85rem 1rem;
   border: 1px solid var(--border);
-  border-left: 3px solid var(--ink-faint);
+  border-left: 4px solid var(--ink-faint);
   border-radius: var(--radius-sm);
   font-size: 0.875rem;
+  background: var(--surface-sunken);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.02);
 }
-
 .note-attention {
   background: var(--attention-wash);
   border-color: var(--attention-border);
   border-left-color: var(--attention);
   color: var(--attention);
 }
-
 .note-failed {
   background: var(--failed-wash);
   border-color: var(--failed-border);
@@ -619,61 +633,29 @@ tbody tr:hover td {
 }
 
 /* --- Utilities -------------------------------------------------------------- */
-
-.stack {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-.stack-sm {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-.row {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-}
-.row-between {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-}
-.wrap {
-  flex-wrap: wrap;
-}
-.grow {
-  flex: 1;
-}
-.muted {
-  color: var(--ink-muted);
-}
-.faint {
-  color: var(--ink-faint);
-}
-.small {
-  font-size: 0.8125rem;
-}
-.tiny {
-  font-size: 0.75rem;
-}
+.stack { display: flex; flex-direction: column; gap: 1.25rem; }
+.stack-sm { display: flex; flex-direction: column; gap: 0.6rem; }
+.row { display: flex; align-items: center; gap: 0.75rem; }
+.row-between { display: flex; align-items: center; justify-content: space-between; gap: 1.25rem; }
+.wrap { flex-wrap: wrap; }
+.grow { flex: 1; }
+.muted { color: var(--ink-muted); }
+.faint { color: var(--ink-faint); }
+.small { font-size: 0.875rem; }
+.tiny { font-size: 0.75rem; }
 .clause {
   font-family: var(--font-mono), ui-monospace, monospace;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+  background: rgba(0,0,0,0.04);
+  padding: 0.1rem 0.3rem;
+  border-radius: 4px;
 }
-.empty {
-  padding: 2.5rem 1rem;
-  text-align: center;
-  color: var(--ink-muted);
-}
+@media (prefers-color-scheme: dark) { .clause { background: rgba(255,255,255,0.08); } }
+.empty { padding: 3rem 1rem; text-align: center; color: var(--ink-muted); }
 
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;

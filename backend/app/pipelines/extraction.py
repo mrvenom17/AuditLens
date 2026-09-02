@@ -180,41 +180,31 @@ def _extract_xlsx(content: bytes) -> ExtractionResult:
 
 
 def _extract_image(content: bytes) -> ExtractionResult:
-    """OCR an image. Screenshots are common evidence for configuration state."""
-    try:
-        import pytesseract
-        from PIL import Image
-    except ImportError:
-        return ExtractionResult(
-            success=False,
-            error="Image text extraction is not available on this server.",
-        )
+    """OCR an image. Screenshots are common evidence for configuration state.
+
+    The provider is chosen by configuration (`app/pipelines/ocr.py`); this
+    function only distinguishes the two kinds of failure that matter to the
+    person on the other end. A server misconfiguration tells an operator to fix
+    something; an image with no readable text tells the auditor to review it by
+    hand. Collapsing them would leave someone re-uploading a file forever.
+    """
+    from app.pipelines import ocr
 
     try:
-        image = Image.open(io.BytesIO(content))
-        image.load()  # decode now, so a malformed image fails here and is caught
-    except Exception:
-        return ExtractionResult(
-            success=False, error="This image could not be opened and may be corrupt."
-        )
-
-    try:
-        text = pytesseract.image_to_string(image).strip()
-    except pytesseract.TesseractNotFoundError:
-        # A configuration problem, not a bad document. Saying so lets an
-        # operator fix it instead of the auditor re-uploading forever.
-        logger.error("Tesseract is not installed; image OCR is unavailable")
+        result = ocr.run(content)
+    except ocr.OCRError as exc:
+        logger.error("Image OCR unavailable: %s", exc)
         return ExtractionResult(
             success=False,
             error="Image text extraction is not configured on this server.",
         )
 
-    if len(text) < _MIN_USEFUL_CHARS:
+    if len(result.text) < _MIN_USEFUL_CHARS:
         return ExtractionResult(
             success=False,
             error="No readable text was found in this image. Please review it manually.",
         )
-    return ExtractionResult(success=True, sections=[ExtractedSection("image", text)])
+    return ExtractionResult(success=True, sections=[ExtractedSection("image", result.text)])
 
 
 def chunk_sections(
